@@ -13,19 +13,47 @@ void main() => runApp(const BahinKoApp());
 
 // ---------- Theme colors ----------
 
+
 class BahinKoApp extends StatelessWidget {
   const BahinKoApp({super.key});
+
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        debugShowCheckedModeBanner: false,
-        title: 'BahinKo',
-        theme: ThemeData(
-          colorSchemeSeed: green,
-          useMaterial3: true,
-          scaffoldBackgroundColor: const Color(0xFFF8FAF9),
-        ),
-        home: const Onboarding(),
-      );
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'BahinKo',
+
+      theme: ThemeData(
+        colorSchemeSeed: green,
+        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF8FAF9),
+      ),
+
+      // Keeps the app centered with a maximum width of 430 pixels.
+      builder: (context, child) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final appWidth = constraints.maxWidth < 430
+                ? constraints.maxWidth
+                : 430.0;
+
+            return ColoredBox(
+              color: const Color(0xFFEFF3F1),
+              child: Center(
+                child: SizedBox(
+                  width: appWidth,
+                  height: constraints.maxHeight,
+                  child: child,
+                ),
+              ),
+            );
+          },
+        );
+      },
+
+      home: const Onboarding(),
+    );
+  }
 }
 
 // ---------- Mock data (edit freely) ----------
