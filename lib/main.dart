@@ -109,13 +109,12 @@ String _formatCurrency(int amountInCents) {
 void go(BuildContext c, Widget w) =>
     Navigator.push(c, MaterialPageRoute(builder: (_) => w));
 
-List<int> _splitEqually(int amount, int count) {
-  final perPerson = amount ~/ count;
-  final remainder = amount % count;
-  return List.generate(
-    count,
-    (index) => perPerson + (index < remainder ? 1 : 0),
-  );
+String _formatShareRange(int totalInCents, int count) {
+  final lowestShare = totalInCents ~/ count;
+  final highestShare =
+      lowestShare + (totalInCents % count == 0 ? 0 : 1);
+  if (lowestShare == highestShare) return _formatCurrency(lowestShare);
+  return '${_formatCurrency(lowestShare)}–${_formatCurrency(highestShare)}';
 }
 
 // ---------- Reusable widgets ----------
@@ -655,6 +654,8 @@ class ManualReceiptEntry extends StatefulWidget {
 class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
   final _formKey = GlobalKey<FormState>();
   final _storeController = TextEditingController();
+  final _sharingCountController =
+      TextEditingController(text: '${people.length}');
   final List<_ManualReceiptLine> _lines = [_ManualReceiptLine()];
 
   int get _total => _lines.fold(
@@ -665,6 +666,7 @@ class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
   @override
   void dispose() {
     _storeController.dispose();
+    _sharingCountController.dispose();
     for (final line in _lines) {
       line.dispose();
     }
@@ -691,11 +693,13 @@ class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
         )
         .toList();
     final storeName = _storeController.text.trim();
+    final sharingCount = int.parse(_sharingCountController.text.trim());
     go(
       context,
       AssignItems(
         receiptItems: receiptItems,
         storeName: storeName.isEmpty ? 'Manual Receipt' : storeName,
+        sharingCount: sharingCount,
       ),
     );
   }
@@ -715,6 +719,24 @@ class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
               labelText: 'Store or receipt name (optional)',
               border: OutlineInputBorder(),
             ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            key: const ValueKey('receipt-sharing-count'),
+            controller: _sharingCountController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'People sharing',
+              helperText: 'Split the total equally',
+              border: OutlineInputBorder(),
+            ),
+            validator: (value) {
+              final count = int.tryParse(value?.trim() ?? '');
+              if (count == null || count < 1) {
+                return 'Enter at least 1 person';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 20),
           const Text(
@@ -1127,14 +1149,17 @@ class AssignItems extends StatelessWidget {
     super.key,
     this.receiptItems,
     this.storeName = 'Samgyup House',
+    this.sharingCount,
   });
 
   final List<ReceiptLineItem>? receiptItems;
   final String storeName;
+  final int? sharingCount;
 
   @override
   Widget build(BuildContext context) {
     final displayItems = receiptItems ?? items;
+    final numberOfPeople = sharingCount ?? people.length;
     final total = displayItems.fold<int>(
       0,
       (sum, item) => sum + item.amountInCents,
@@ -1165,7 +1190,9 @@ class AssignItems extends StatelessWidget {
                   '1 needs review',
                   bg: Color(0xFFFFF3D6),
                   fg: Color(0xFFB7791F),
-                ),
+                )
+              else
+                Pill('$numberOfPeople people'),
             ],
           ),
           const SizedBox(height: 12),
@@ -1216,12 +1243,26 @@ class AssignItems extends StatelessWidget {
             ),
           ],
         ),
+        if (receiptItems != null) ...[
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Each person pays'),
+              Text(_formatShareRange(total, numberOfPeople)),
+            ],
+          ),
+        ],
           const SizedBox(height: 8),
         Btn(
           'Confirm Split',
           () => go(
             context,
-            SplitSummary(receiptItems: receiptItems, storeName: storeName),
+            SplitSummary(
+              receiptItems: receiptItems,
+              storeName: storeName,
+              sharingCount: sharingCount,
+            ),
           ),
         ),
         ],
@@ -1236,21 +1277,21 @@ class SplitSummary extends StatelessWidget {
     super.key,
     this.receiptItems,
     this.storeName = 'Samgyup House',
+    this.sharingCount,
   });
 
   final List<ReceiptLineItem>? receiptItems;
   final String storeName;
+  final int? sharingCount;
 
   @override
   Widget build(BuildContext context) {
     final displayItems = receiptItems ?? items;
+    final numberOfPeople = sharingCount ?? people.length;
     final total = displayItems.fold<int>(
       0,
       (sum, item) => sum + item.amountInCents,
     );
-    final personShares = receiptItems == null
-        ? shares
-        : _splitEqually(total, people.length);
 
     return AppPage(
       'Split Summary',
@@ -1261,9 +1302,11 @@ class SplitSummary extends StatelessWidget {
           storeName,
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
           ),
-          const Text(
-            'Oct 20, 2026 · 5 people',
-            style: TextStyle(color: Colors.grey, fontSize: 12),
+          Text(
+            receiptItems == null
+                ? 'Oct 20, 2026 · 5 people'
+                : '$numberOfPeople people sharing',
+            style: const TextStyle(color: Colors.grey, fontSize: 12),
           ),
           const Divider(),
           for (final i in displayItems)
@@ -1297,17 +1340,28 @@ class SplitSummary extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-          for (var i = 0; i < people.length; i++)
+          if (receiptItems != null)
             ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: Avatar(people[i], size: 32),
-              title: Text(people[i].name),
+              title: Text('Per-person share ($numberOfPeople people)'),
               trailing: Text(
-                _formatCurrency(personShares[i]),
+                _formatShareRange(total, numberOfPeople),
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-            ),
+            )
+          else
+            for (var i = 0; i < people.length; i++)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Avatar(people[i], size: 32),
+                title: Text(people[i].name),
+                trailing: Text(
+                  _formatCurrency(shares[i]),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
         ],
       ),
     ),

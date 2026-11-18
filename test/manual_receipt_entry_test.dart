@@ -10,6 +10,19 @@ void main() {
 
     await tester.tap(find.text('Enter manually'));
     await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('receipt-sharing-count')),
+      '0',
+    );
+    await tester.tap(find.text('Continue to items'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter at least 1 person'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('receipt-sharing-count')),
+      '3',
+    );
     await tester.tap(find.text('Continue to items'));
     await tester.pumpAndSettle();
 
@@ -52,16 +65,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('2 items entered manually'), findsOneWidget);
+    expect(find.text('3 people'), findsOneWidget);
     expect(find.text('Coffee'), findsOneWidget);
     expect(find.text('Cake'), findsOneWidget);
     expect(find.text('₱327.77'), findsOneWidget);
+    expect(find.text('₱109.25–₱109.26'), findsOneWidget);
 
     await tester.tap(find.text('Confirm Split'));
     await tester.pumpAndSettle();
 
     expect(find.text('Cafe'), findsOneWidget);
+    expect(find.text('3 people sharing'), findsOneWidget);
     expect(find.text('₱327.77'), findsOneWidget);
-    expect(find.text('₱65.56'), findsNWidgets(2));
-    expect(find.text('₱65.55'), findsNWidgets(3));
+    expect(find.text('Per-person share (3 people)'), findsOneWidget);
+    expect(find.text('₱109.25–₱109.26'), findsOneWidget);
   });
 }
