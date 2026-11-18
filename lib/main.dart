@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'models/person.dart';
 import 'theme/app_colors.dart';
@@ -54,6 +56,15 @@ const shares = [490, 610, 520, 430, 400];
 
 void go(BuildContext c, Widget w) =>
     Navigator.push(c, MaterialPageRoute(builder: (_) => w));
+
+List<int> _splitEqually(int amount, int count) {
+  final perPerson = amount ~/ count;
+  final remainder = amount % count;
+  return List.generate(
+    count,
+    (index) => perPerson + (index < remainder ? 1 : 0),
+  );
+}
 
 // ---------- Reusable widgets ----------
 
@@ -569,7 +580,7 @@ class ScanReceipt extends StatelessWidget {
         const SizedBox(height: 8),
         Btn(
           'Enter manually',
-          () => go(context, const AssignItems()),
+          () => go(context, const ManualReceiptEntry()),
           outlined: true,
         ),
         const SizedBox(height: 16),
@@ -580,6 +591,175 @@ class ScanReceipt extends StatelessWidget {
       ],
     ),
   );
+}
+
+class ManualReceiptEntry extends StatefulWidget {
+  const ManualReceiptEntry({super.key});
+
+  @override
+  State<ManualReceiptEntry> createState() => _ManualReceiptEntryState();
+}
+
+class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
+  final _formKey = GlobalKey<FormState>();
+  final _storeController = TextEditingController();
+  final List<_ManualReceiptLine> _lines = [_ManualReceiptLine()];
+
+  int get _total => _lines.fold(
+    0,
+    (total, line) => total + (int.tryParse(line.price.text.trim()) ?? 0),
+  );
+
+  @override
+  void dispose() {
+    _storeController.dispose();
+    for (final line in _lines) {
+      line.dispose();
+    }
+    super.dispose();
+  }
+
+  void _addLine() => setState(() => _lines.add(_ManualReceiptLine()));
+
+  void _removeLine(_ManualReceiptLine line) {
+    if (_lines.length == 1) return;
+    setState(() => _lines.remove(line));
+    line.dispose();
+  }
+
+  void _continueToItems() {
+    if (!_formKey.currentState!.validate()) return;
+
+    final receiptItems = _lines
+        .map((line) => (line.name.text.trim(), int.parse(line.price.text.trim())))
+        .toList();
+    final storeName = _storeController.text.trim();
+    go(
+      context,
+      AssignItems(
+        receiptItems: receiptItems,
+        storeName: storeName.isEmpty ? 'Manual Receipt' : storeName,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => AppPage(
+    'Enter Receipt',
+    Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextFormField(
+            key: const ValueKey('receipt-store-name'),
+            controller: _storeController,
+            decoration: const InputDecoration(
+              labelText: 'Store or receipt name (optional)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Items',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          for (var index = 0; index < _lines.length; index++)
+            _buildItemFields(_lines[index], index),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _addLine,
+              icon: const Icon(Icons.add),
+              label: const Text('Add item'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Box(
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Total',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '₱$_total',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+    bottom: Btn('Continue to items', _continueToItems),
+  );
+
+  Widget _buildItemFields(_ManualReceiptLine line, int index) => Padding(
+    key: ObjectKey(line),
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: TextFormField(
+            key: ValueKey('receipt-item-name-$index'),
+            controller: line.name,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Item name',
+              border: OutlineInputBorder(),
+            ),
+            validator: (value) => value == null || value.trim().isEmpty
+                ? 'Enter an item name'
+                : null,
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 100,
+          child: TextFormField(
+            key: ValueKey('receipt-item-price-$index'),
+            controller: line.price,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: const InputDecoration(
+              labelText: 'Price (₱)',
+              helperText: 'Whole pesos',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => setState(() {}),
+            validator: (value) {
+              final amount = int.tryParse(value?.trim() ?? '');
+              if (amount == null) return 'Enter a price';
+              if (amount <= 0) return 'Price must be over ₱0';
+              return null;
+            },
+          ),
+        ),
+        IconButton(
+          tooltip: 'Remove item',
+          onPressed: _lines.length == 1 ? null : () => _removeLine(line),
+          icon: const Icon(Icons.remove_circle_outline),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ManualReceiptLine {
+  final name = TextEditingController();
+  final price = TextEditingController();
+
+  void dispose() {
+    name.dispose();
+    price.dispose();
+  }
 }
 
 class CameraCapture extends StatefulWidget {
@@ -594,26 +774,40 @@ class _CameraCaptureState extends State<CameraCapture>
   CameraController? _controller;
   Uint8List? _capturedImage;
   String? _cameraError;
+  String? _cameraHelp;
   bool _initializing = false;
   bool _capturing = false;
+  bool _isActive = true;
+  bool _resumeRequested = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initializeCamera();
+    unawaited(_initializeCamera());
   }
 
   Future<void> _initializeCamera() async {
-    if (_initializing || !mounted) return;
+    if (_initializing) {
+      _resumeRequested = true;
+      return;
+    }
+    if (!mounted || !_isActive) return;
     _initializing = true;
-    setState(() => _cameraError = null);
+    setState(() {
+      _cameraError = null;
+      _cameraHelp = null;
+    });
 
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
         if (mounted) {
-          setState(() => _cameraError = 'No camera was found on this device.');
+          setState(() {
+            _cameraError = 'No camera was found on this device.';
+            _cameraHelp =
+                'Connect a webcam, close other apps using it, and try again.';
+          });
         }
         return;
       }
@@ -624,21 +818,30 @@ class _CameraCaptureState extends State<CameraCapture>
         enableAudio: false,
       );
       await controller.initialize();
-      if (!mounted) {
+      if (!mounted || !_isActive) {
         await controller.dispose();
         return;
       }
       setState(() => _controller = controller);
     } on CameraException catch (error) {
       if (mounted) {
-        setState(
-          () => _cameraError =
-              error.description ??
-              'Unable to access the camera (${error.code}).',
-        );
+        setState(() {
+          _cameraError = _cameraErrorMessage(error);
+          _cameraHelp = _cameraHelpMessage(error);
+        });
       }
     } finally {
+      final resumeRequested = _resumeRequested;
+      _resumeRequested = false;
       _initializing = false;
+      if (resumeRequested &&
+          mounted &&
+          _isActive &&
+          _controller == null &&
+          _cameraError == null &&
+          _capturedImage == null) {
+        unawaited(_initializeCamera());
+      }
     }
   }
 
@@ -660,7 +863,9 @@ class _CameraCaptureState extends State<CameraCapture>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(error.description ?? 'Could not capture the photo.'),
+            content: Text(
+              '${_cameraErrorMessage(error)} ${_cameraHelpMessage(error)}',
+            ),
           ),
         );
       }
@@ -671,25 +876,28 @@ class _CameraCaptureState extends State<CameraCapture>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) {
-      if (state == AppLifecycleState.resumed && _capturedImage == null) {
-        _initializeCamera();
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      _isActive = false;
+      final controller = _controller;
+      if (controller != null) {
+        setState(() => _controller = null);
+        unawaited(controller.dispose());
       }
       return;
     }
 
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
-      setState(() => _controller = null);
-      unawaited(controller.dispose());
-    } else if (state == AppLifecycleState.resumed && _capturedImage == null) {
-      _initializeCamera();
+    if (state == AppLifecycleState.resumed) {
+      _isActive = true;
+      if (_capturedImage == null && _controller == null) {
+        unawaited(_initializeCamera());
+      }
     }
   }
 
   @override
   void dispose() {
+    _isActive = false;
     WidgetsBinding.instance.removeObserver(this);
     final controller = _controller;
     if (controller != null) unawaited(controller.dispose());
@@ -744,6 +952,14 @@ class _CameraCaptureState extends State<CameraCapture>
               style: const TextStyle(color: Colors.white),
               textAlign: TextAlign.center,
             ),
+            if (_cameraHelp != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _cameraHelp!,
+                style: const TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ],
         ),
       );
@@ -766,10 +982,16 @@ class _CameraCaptureState extends State<CameraCapture>
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    setState(() => _capturedImage = null);
-                    _initializeCamera();
-                  },
+                  onPressed: _initializing
+                      ? null
+                      : () {
+                          setState(() {
+                            _capturedImage = null;
+                            _cameraError = null;
+                            _cameraHelp = null;
+                          });
+                          unawaited(_initializeCamera());
+                        },
                   icon: const Icon(Icons.refresh),
                   label: const Text('Retake'),
                 ),
@@ -791,9 +1013,9 @@ class _CameraCaptureState extends State<CameraCapture>
       return SizedBox(
         width: double.infinity,
         child: FilledButton.icon(
-          onPressed: _initializeCamera,
+          onPressed: _initializing ? null : _initializeCamera,
           icon: const Icon(Icons.refresh),
-          label: const Text('Try again'),
+          label: Text(_initializing ? 'Connecting...' : 'Try again'),
         ),
       );
     }
@@ -807,13 +1029,55 @@ class _CameraCaptureState extends State<CameraCapture>
       ),
     );
   }
+
+  String _cameraErrorMessage(CameraException error) {
+    if (error.code == 'CameraAccessDenied' ||
+        error.code == 'CameraAccessDeniedWithoutPrompt') {
+      return 'Camera access was denied.';
+    }
+    return error.description ?? 'Unable to access the camera (${error.code}).';
+  }
+
+  String _cameraHelpMessage(CameraException error) {
+    if (error.code == 'CameraAccessDenied' ||
+        error.code == 'CameraAccessDeniedWithoutPrompt') {
+      if (kIsWeb) {
+        return "Allow camera access in your browser's site settings, then retry.";
+      }
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.windows:
+          return 'In Windows Settings > Privacy & security > Camera, enable camera access and access for desktop apps.';
+        case TargetPlatform.macOS:
+          return 'Allow camera access for BahinKo in System Settings > Privacy & Security > Camera.';
+        case TargetPlatform.android:
+          return 'Allow camera access for BahinKo in the app permissions in Settings.';
+        case TargetPlatform.iOS:
+          return 'Allow camera access for BahinKo in Settings > Privacy & Security > Camera.';
+        case TargetPlatform.linux:
+        case TargetPlatform.fuchsia:
+          return 'Check your system camera permissions, then retry.';
+      }
+    }
+    return 'Check that your camera is connected and not in use by another app, then retry.';
+  }
 }
 
 // ---------- 5. Assign Items ----------
 class AssignItems extends StatelessWidget {
-  const AssignItems({super.key});
+  const AssignItems({
+    super.key,
+    this.receiptItems,
+    this.storeName = 'Samgyup House',
+  });
+
+  final List<(String, int)>? receiptItems;
+  final String storeName;
+
   @override
   Widget build(BuildContext context) {
+    final displayItems = receiptItems ?? items;
+    final total = displayItems.fold<int>(0, (sum, item) => sum + item.$2);
+
     // who ordered each item (indexes into `people`); empty list = split equally
     const who = [
       [0, 1, 2],
@@ -828,17 +1092,22 @@ class AssignItems extends StatelessWidget {
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
-              Text('Scanned 5 items'),
-              Pill(
-                '1 needs review',
-                bg: Color(0xFFFFF3D6),
-                fg: Color(0xFFB7791F),
+            children: [
+              Text(
+                receiptItems == null
+                    ? 'Scanned ${displayItems.length} items'
+                    : '${displayItems.length} items entered manually',
               ),
+              if (receiptItems == null)
+                const Pill(
+                  '1 needs review',
+                  bg: Color(0xFFFFF3D6),
+                  fg: Color(0xFFB7791F),
+                ),
             ],
           ),
           const SizedBox(height: 12),
-          for (var i = 0; i < items.length; i++)
+          for (var i = 0; i < displayItems.length; i++)
             Box(
               Row(
                 children: [
@@ -847,14 +1116,16 @@ class AssignItems extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          items[i].$1,
+                          displayItems[i].$1,
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        Text('₱${items[i].$2}'),
+                        Text('₱${displayItems[i].$2}'),
                       ],
                     ),
                   ),
-                  if (who[i].isEmpty)
+                  if (receiptItems != null)
+                    const Pill('Split equally')
+                  else if (who[i].isEmpty)
                     Pill(i == 1 ? 'All' : 'Split equally')
                   else
                     for (final p in who[i])
@@ -870,18 +1141,27 @@ class AssignItems extends StatelessWidget {
       bottom: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Total'),
-              Text(
-                '₱2,450',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Total'),
+            Text(
+              '₱$total',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
               ),
-            ],
-          ),
+            ),
+          ],
+        ),
           const SizedBox(height: 8),
-          Btn('Confirm Split', () => go(context, const SplitSummary())),
+        Btn(
+          'Confirm Split',
+          () => go(
+            context,
+            SplitSummary(receiptItems: receiptItems, storeName: storeName),
+          ),
+        ),
         ],
       ),
     );
@@ -890,15 +1170,30 @@ class AssignItems extends StatelessWidget {
 
 // ---------- 6. Split Summary ----------
 class SplitSummary extends StatelessWidget {
-  const SplitSummary({super.key});
+  const SplitSummary({
+    super.key,
+    this.receiptItems,
+    this.storeName = 'Samgyup House',
+  });
+
+  final List<(String, int)>? receiptItems;
+  final String storeName;
+
   @override
-  Widget build(BuildContext context) => AppPage(
-    'Split Summary',
+  Widget build(BuildContext context) {
+    final displayItems = receiptItems ?? items;
+    final total = displayItems.fold<int>(0, (sum, item) => sum + item.$2);
+    final personShares = receiptItems == null
+        ? shares
+        : _splitEqually(total, people.length);
+
+    return AppPage(
+      'Split Summary',
     Box(
       Column(
         children: [
-          const Text(
-            'Samgyup House',
+        Text(
+          storeName,
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
           ),
           const Text(
@@ -906,7 +1201,7 @@ class SplitSummary extends StatelessWidget {
             style: TextStyle(color: Colors.grey, fontSize: 12),
           ),
           const Divider(),
-          for (final i in items)
+          for (final i in displayItems)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
@@ -915,12 +1210,12 @@ class SplitSummary extends StatelessWidget {
               ),
             ),
           const Divider(),
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Total', style: TextStyle(fontWeight: FontWeight.bold)),
               Text(
-                '₱2,450',
+                '₱$total',
                 style: TextStyle(
                   color: green,
                   fontSize: 20,
@@ -944,7 +1239,7 @@ class SplitSummary extends StatelessWidget {
               leading: Avatar(people[i], size: 32),
               title: Text(people[i].name),
               trailing: Text(
-                '₱${shares[i]}',
+                '₱${personShares[i]}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
@@ -961,6 +1256,7 @@ class SplitSummary extends StatelessWidget {
       ],
     ),
   );
+  }
 }
 
 // ---------- 7. Settle Up ----------
