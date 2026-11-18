@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'models/person.dart';
 import 'theme/app_colors.dart';
@@ -19,7 +18,6 @@ void main() => runApp(const BahinKoApp());
 
 // ---------- Theme colors ----------
 
-
 class BahinKoApp extends StatelessWidget {
   const BahinKoApp({super.key});
 
@@ -31,6 +29,24 @@ class BahinKoApp extends StatelessWidget {
           colorSchemeSeed: green,
           useMaterial3: true,
           scaffoldBackgroundColor: const Color(0xFFF8FAF9),
+        ),
+        builder: (context, child) => LayoutBuilder(
+          builder: (context, constraints) {
+            final appWidth = constraints.maxWidth < 430
+                ? constraints.maxWidth
+                : 430.0;
+
+            return ColoredBox(
+              color: const Color(0xFFEFF3F1),
+              child: Center(
+                child: SizedBox(
+                  width: appWidth,
+                  height: constraints.maxHeight,
+                  child: child,
+                ),
+              ),
+            );
+          },
         ),
         home: const Onboarding(),
       );
@@ -46,15 +62,49 @@ const people = [
   Person('You', 'YO', Color(0xFF5ED38A), 'GCash', 'Owes ₱490'),
 ];
 
+class ReceiptLineItem {
+  const ReceiptLineItem(this.name, this.amountInCents);
+
+  final String name;
+  final int amountInCents;
+}
+
 const items = [
-  ('Pork Belly set', 890),
-  ('Rice x5', 250),
-  ('Iced Tea x2', 300),
-  ('Soju', 420),
-  ('Service and tax', 590),
+  ReceiptLineItem('Pork Belly set', 89000),
+  ReceiptLineItem('Rice x5', 25000),
+  ReceiptLineItem('Iced Tea x2', 30000),
+  ReceiptLineItem('Soju', 42000),
+  ReceiptLineItem('Service and tax', 59000),
 ];
 
-const shares = [490, 610, 520, 430, 400];
+const shares = [49000, 61000, 52000, 43000, 40000];
+
+int? _parsePesosToCents(String value) {
+  final trimmed = value.trim();
+  if (!RegExp(r'^\d*\.?\d{0,2}$').hasMatch(trimmed) ||
+      trimmed.isEmpty ||
+      trimmed == '.') {
+    return null;
+  }
+
+  final parts = trimmed.split('.');
+  final wholePesos = parts.first.isEmpty ? 0 : int.tryParse(parts.first);
+  if (wholePesos == null || wholePesos > 9000000000000) return null;
+
+  final centavos = parts.length == 1 || parts.last.isEmpty
+      ? 0
+      : int.tryParse(parts.last.padRight(2, '0'));
+  if (centavos == null) return null;
+  return wholePesos * 100 + centavos;
+}
+
+String _formatCurrency(int amountInCents) {
+  final pesos = amountInCents ~/ 100;
+  final centavos = amountInCents % 100;
+  return centavos == 0
+      ? '₱$pesos'
+      : '₱$pesos.${centavos.toString().padLeft(2, '0')}';
+}
 
 void go(BuildContext c, Widget w) =>
     Navigator.push(c, MaterialPageRoute(builder: (_) => w));
@@ -558,11 +608,11 @@ class ScanReceipt extends StatelessWidget {
                     ),
                     for (final i in items)
                       Text(
-                        '${i.$1}   ₱${i.$2}',
+                        '${i.name}   ${_formatCurrency(i.amountInCents)}',
                         style: const TextStyle(fontSize: 12),
                       ),
-                    const Text(
-                      'TOTAL   2,450',
+                    Text(
+                      'TOTAL   ${_formatCurrency(items.fold<int>(0, (sum, item) => sum + item.amountInCents))}',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
@@ -609,7 +659,7 @@ class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
 
   int get _total => _lines.fold(
     0,
-    (total, line) => total + (int.tryParse(line.price.text.trim()) ?? 0),
+    (total, line) => total + (_parsePesosToCents(line.price.text) ?? 0),
   );
 
   @override
@@ -633,7 +683,12 @@ class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
     if (!_formKey.currentState!.validate()) return;
 
     final receiptItems = _lines
-        .map((line) => (line.name.text.trim(), int.parse(line.price.text.trim())))
+        .map(
+          (line) => ReceiptLineItem(
+            line.name.text.trim(),
+            _parsePesosToCents(line.price.text)!,
+          ),
+        )
         .toList();
     final storeName = _storeController.text.trim();
     go(
@@ -687,7 +742,7 @@ class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  '₱$_total',
+                  _formatCurrency(_total),
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
@@ -728,18 +783,20 @@ class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
           child: TextFormField(
             key: ValueKey('receipt-item-price-$index'),
             controller: line.price,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               labelText: 'Price (₱)',
-              helperText: 'Whole pesos',
+              helperText: 'Up to 2 decimal places',
               border: OutlineInputBorder(),
             ),
             onChanged: (_) => setState(() {}),
             validator: (value) {
-              final amount = int.tryParse(value?.trim() ?? '');
-              if (amount == null) return 'Enter a price';
-              if (amount <= 0) return 'Price must be over ₱0';
+              if (value == null || value.trim().isEmpty) {
+                return 'Enter a price';
+              }
+              final amount = _parsePesosToCents(value);
+              if (amount == null) return 'Enter a valid price (max 2 decimals)';
+              if (amount <= 0) return 'Must be over ₱0';
               return null;
             },
           ),
@@ -1072,13 +1129,16 @@ class AssignItems extends StatelessWidget {
     this.storeName = 'Samgyup House',
   });
 
-  final List<(String, int)>? receiptItems;
+  final List<ReceiptLineItem>? receiptItems;
   final String storeName;
 
   @override
   Widget build(BuildContext context) {
     final displayItems = receiptItems ?? items;
-    final total = displayItems.fold<int>(0, (sum, item) => sum + item.$2);
+    final total = displayItems.fold<int>(
+      0,
+      (sum, item) => sum + item.amountInCents,
+    );
 
     // who ordered each item (indexes into `people`); empty list = split equally
     const who = [
@@ -1118,10 +1178,10 @@ class AssignItems extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          displayItems[i].$1,
+                          displayItems[i].name,
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        Text('₱${displayItems[i].$2}'),
+                        Text(_formatCurrency(displayItems[i].amountInCents)),
                       ],
                     ),
                   ),
@@ -1148,7 +1208,7 @@ class AssignItems extends StatelessWidget {
           children: [
             const Text('Total'),
             Text(
-              '₱$total',
+              _formatCurrency(total),
               style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
@@ -1178,13 +1238,16 @@ class SplitSummary extends StatelessWidget {
     this.storeName = 'Samgyup House',
   });
 
-  final List<(String, int)>? receiptItems;
+  final List<ReceiptLineItem>? receiptItems;
   final String storeName;
 
   @override
   Widget build(BuildContext context) {
     final displayItems = receiptItems ?? items;
-    final total = displayItems.fold<int>(0, (sum, item) => sum + item.$2);
+    final total = displayItems.fold<int>(
+      0,
+      (sum, item) => sum + item.amountInCents,
+    );
     final personShares = receiptItems == null
         ? shares
         : _splitEqually(total, people.length);
@@ -1208,7 +1271,7 @@ class SplitSummary extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [Text(i.$1), Text('₱${i.$2}')],
+                children: [Text(i.name), Text(_formatCurrency(i.amountInCents))],
               ),
             ),
           const Divider(),
@@ -1217,7 +1280,7 @@ class SplitSummary extends StatelessWidget {
             children: [
               Text('Total', style: TextStyle(fontWeight: FontWeight.bold)),
               Text(
-                '₱$total',
+                _formatCurrency(total),
                 style: TextStyle(
                   color: green,
                   fontSize: 20,
@@ -1241,7 +1304,7 @@ class SplitSummary extends StatelessWidget {
               leading: Avatar(people[i], size: 32),
               title: Text(people[i].name),
               trailing: Text(
-                '₱${personShares[i]}',
+                _formatCurrency(personShares[i]),
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
