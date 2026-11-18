@@ -19,19 +19,21 @@ void main() => runApp(const BahinKoApp());
 
 // ---------- Theme colors ----------
 
+
 class BahinKoApp extends StatelessWidget {
   const BahinKoApp({super.key});
+
   @override
   Widget build(BuildContext context) => MaterialApp(
-    debugShowCheckedModeBanner: false,
-    title: 'BahinKo',
-    theme: ThemeData(
-      colorSchemeSeed: green,
-      useMaterial3: true,
-      scaffoldBackgroundColor: const Color(0xFFF8FAF9),
-    ),
-    home: const Onboarding(),
-  );
+        debugShowCheckedModeBanner: false,
+        title: 'BahinKo',
+        theme: ThemeData(
+          colorSchemeSeed: green,
+          useMaterial3: true,
+          scaffoldBackgroundColor: const Color(0xFFF8FAF9),
+        ),
+        home: const Onboarding(),
+      );
 }
 
 // ---------- Mock data (edit freely) ----------
