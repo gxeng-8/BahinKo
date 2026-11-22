@@ -9,7 +9,7 @@ void main() {
   setUp(() => groupMembers.value = people);
   tearDown(() => groupMembers.value = people);
 
-  testWidgets('settle up shows every current member except yourself', (
+  testWidgets('settle up shows every current member and current headcount', (
     tester,
   ) async {
     groupMembers.value = [
@@ -19,12 +19,54 @@ void main() {
 
     await tester.pumpWidget(const MaterialApp(home: SettleUp()));
 
-    expect(find.text('You pay Mia'), findsOneWidget);
-    expect(find.text('Jun pays you'), findsOneWidget);
-    expect(find.text('Ana paid you'), findsOneWidget);
-    expect(find.text('Leo pays you'), findsOneWidget);
-    expect(find.text('Nina · Unpaid'), findsOneWidget);
-    expect(find.text('You pays you'), findsNothing);
+    expect(find.text('6 people'), findsOneWidget);
+    expect(find.text('5 payments to Mia'), findsOneWidget);
+    expect(find.text('Jun pays Mia'), findsOneWidget);
+    expect(find.text('Ana pays Mia'), findsOneWidget);
+    expect(find.text('Leo pays Mia'), findsOneWidget);
+    expect(find.text('You pays Mia'), findsOneWidget);
+    expect(find.text('Nina pays Mia'), findsOneWidget);
+  });
+
+  testWidgets('settle up uses the receipt total and marks payments paid', (
+    tester,
+  ) async {
+    groupMembers.value = [
+      ...people,
+      const Person('Nina', 'NI', Colors.blue, 'Guest', 'Unpaid'),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SplitSummary(
+          receiptItems: const [
+            ReceiptLineItem('Coffee', 12550),
+            ReceiptLineItem('Cake', 20227),
+          ],
+          storeName: 'Cafe',
+        ),
+      ),
+    );
+    await tester.tap(find.text('Settle Up'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Cafe'), findsOneWidget);
+    expect(find.text('6 people'), findsOneWidget);
+    expect(find.text('2 items'), findsOneWidget);
+    expect(find.text('₱327.77'), findsOneWidget);
+    expect(find.text('5 payments to Mia'), findsOneWidget);
+    expect(find.text('Jun pays Mia'), findsOneWidget);
+    expect(find.text('Nina pays Mia'), findsOneWidget);
+    expect(find.text('₱54.63'), findsNWidgets(4));
+    expect(find.text('₱54.62'), findsOneWidget);
+
+    final ninaPaymentButton = find.byKey(const ValueKey('settle-payment-5'));
+    await tester.ensureVisible(ninaPaymentButton);
+    await tester.tap(ninaPaymentButton);
+    await tester.pump();
+
+    expect(find.text('Paid'), findsOneWidget);
+    expect(find.text('Undo'), findsOneWidget);
   });
 
   testWidgets('receipt splitting uses the current Members page count', (

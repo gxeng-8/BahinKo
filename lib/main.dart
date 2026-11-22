@@ -137,6 +137,22 @@ String _formatShareRange(int totalInCents, int count) {
   return '${_formatCurrency(lowestShare)}–${_formatCurrency(highestShare)}';
 }
 
+List<int> _calculateMemberShares(
+  int totalInCents,
+  int memberCount, {
+  bool useSampleShares = false,
+}) {
+  if (memberCount <= 0) return const [];
+  if (useSampleShares && memberCount == shares.length) return shares;
+
+  final baseShare = totalInCents ~/ memberCount;
+  final remainder = totalInCents % memberCount;
+  return List<int>.generate(
+    memberCount,
+    (index) => baseShare + (index < remainder ? 1 : 0),
+  );
+}
+
 // ---------- Reusable widgets ----------
 
 // Shared screen layout: back button + title + body + optional bottom buttons
@@ -1367,8 +1383,11 @@ class SplitSummary extends StatelessWidget {
       0,
       (sum, item) => sum + item.amountInCents,
     );
-    final equalBase = numberOfPeople == 0 ? 0 : total ~/ numberOfPeople;
-    final equalRemainder = numberOfPeople == 0 ? 0 : total % numberOfPeople;
+    final memberShares = _calculateMemberShares(
+      total,
+      numberOfPeople,
+      useSampleShares: receiptItems == null,
+    );
     String formatAmount(int amountInCents) {
       final pesos = amountInCents ~/ 100;
       final centavos = amountInCents % 100;
@@ -1597,14 +1616,7 @@ class SplitSummary extends StatelessWidget {
                                 ),
                                 const Spacer(),
                                 Text(
-                                  receiptItems == null
-                                      ? (i < shares.length
-                                            ? formatAmount(shares[i])
-                                            : '—')
-                                      : formatAmount(
-                                          equalBase +
-                                              (i < equalRemainder ? 1 : 0),
-                                        ),
+                                  formatAmount(memberShares[i]),
                                   style: const TextStyle(
                                     color: Color(0xFF202523),
                                     fontSize: 14,
@@ -1629,7 +1641,16 @@ class SplitSummary extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Btn('Settle Up', () => go(context, const SettleUp())),
+                  Btn(
+                    'Settle Up',
+                    () => go(
+                      context,
+                      SettleUp(
+                        receiptItems: receiptItems,
+                        storeName: storeName,
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Btn('Download report', () {}, outlined: true),
                 ],
@@ -1643,146 +1664,176 @@ class SplitSummary extends StatelessWidget {
 }
 
 // ---------- 7. Settle Up ----------
-class SettleUp extends StatelessWidget {
-  const SettleUp({super.key});
+class SettleUp extends StatefulWidget {
+  const SettleUp({
+    super.key,
+    this.receiptItems,
+    this.storeName = 'Samgyup House',
+  });
+
+  final List<ReceiptLineItem>? receiptItems;
+  final String storeName;
+
+  @override
+  State<SettleUp> createState() => _SettleUpState();
+}
+
+class _SettleUpState extends State<SettleUp> {
+  final Set<Person> _paidMembers = {};
+
   @override
   Widget build(BuildContext context) => AppPage(
     'Settle Up',
-    Column(
-      children: [
-        const Box(
-          color: lime,
-          Text(
-            '✓ Smart settle: 2 transfers instead of 4',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-        ),
-        ValueListenableBuilder<List<Person>>(
-          valueListenable: groupMembers,
-          builder: (context, currentMembers, _) {
-            final you = currentMembers.firstWhere(
-              (member) => member.name == 'You',
-              orElse: () => const Person('', '', green, '', ''),
-            );
-            final amountYouOwe = you.status.startsWith('Owes ')
-                ? you.status.substring('Owes '.length)
-                : '—';
-            const paidAmounts = {'Ana': '₱180'};
+    ValueListenableBuilder<List<Person>>(
+      valueListenable: groupMembers,
+      builder: (context, currentMembers, _) {
+        final displayItems = widget.receiptItems ?? items;
+        final total = displayItems.fold<int>(
+          0,
+          (sum, item) => sum + item.amountInCents,
+        );
+        final memberShares = _calculateMemberShares(
+          total,
+          currentMembers.length,
+          useSampleShares: widget.receiptItems == null,
+        );
+        final payerIndex = currentMembers.indexWhere(
+          (member) => member.pay == 'Paid the bill',
+        );
+        final payer = payerIndex < 0 ? null : currentMembers[payerIndex];
+        final transferCount = payer == null ? 0 : currentMembers.length - 1;
 
-            return Column(
-              children: [
-                for (final member in currentMembers)
-                  if (member.name != 'You')
-                    Builder(
-                      builder: (context) {
-                        final isYouPaying = member.pay == 'Paid the bill';
-                        final amountOwed = member.status.startsWith('Owes ')
-                            ? member.status.substring('Owes '.length)
-                            : null;
-                        final amountPaid = paidAmounts[member.name];
-                        final amount = isYouPaying
-                            ? amountYouOwe
-                            : amountOwed ?? amountPaid;
-
-                        return Box(
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      isYouPaying
-                                          ? 'You pay ${member.name}'
-                                          : member.status == 'Paid'
-                                          ? '${member.name} paid you'
-                                          : member.status.startsWith('Owes ')
-                                          ? '${member.name} pays you'
-                                          : '${member.name} · ${member.status}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  if (amount != null)
-                                    Text(
-                                      amount,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 18,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              if (isYouPaying) ...[
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: FilledButton(
-                                        // TODO: open GCash with prefilled amount (url_launcher)
-                                        onPressed: () {},
-                                        child: const Text('Pay with GCash'),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: FilledButton(
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor: Colors.black,
-                                        ),
-                                        onPressed: () {},
-                                        child: const Text('Maya'),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const Text(
-                                  'Amount is prefilled. You confirm in the payment app.',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              ] else if (member.status == 'Paid') ...[
-                                const SizedBox(height: 6),
-                                const Pill('Paid'),
-                              ] else if (amountOwed != null ||
-                                  member.status == 'Unpaid') ...[
-                                const SizedBox(height: 6),
-                                const Pill(
-                                  'Unpaid',
-                                  bg: Color(0xFFFFF3D6),
-                                  fg: Color(0xFFB7791F),
-                                ),
-                                if (amountOwed != null) ...[
-                                  const SizedBox(height: 8),
-                                  Btn(
-                                    'Send neutral reminder',
-                                    () {},
-                                    outlined: true,
-                                  ),
-                                ],
-                              ],
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-              ],
-            );
-          },
-        ),
-        TextButton(
-          onPressed: () => go(context, const Privacy()),
-          child: const Text('How we protect your data ›'),
-        ),
-      ],
+        return Column(
+          children: [
+            Box(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.storeName,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('${currentMembers.length} people'),
+                      Text('${displayItems.length} items'),
+                      Text(
+                        _formatCurrency(total),
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    payer == null
+                        ? 'No bill payer is set for this split.'
+                        : '$transferCount payments to ${payer.name}',
+                    style: const TextStyle(color: Colors.black54),
+                  ),
+                ],
+              ),
+            ),
+            if (payer == null)
+              const Box(
+                Text(
+                  'Set a member as the bill payer to calculate settlements.',
+                ),
+              )
+            else
+              for (var i = 0; i < currentMembers.length; i++)
+                if (i != payerIndex)
+                  _settlementCard(
+                    context,
+                    member: currentMembers[i],
+                    payer: payer,
+                    amountInCents: memberShares[i],
+                    memberIndex: i,
+                  ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Payments happen outside BahinKo. Mark a person paid after confirming the transfer.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+            ),
+            TextButton(
+              onPressed: () => go(context, const Privacy()),
+              child: const Text('How we protect your data ›'),
+            ),
+          ],
+        );
+      },
     ),
     bottom: Btn('Done', () => Navigator.popUntil(context, (r) => r.isFirst)),
   );
+
+  Widget _settlementCard(
+    BuildContext context, {
+    required Person member,
+    required Person payer,
+    required int amountInCents,
+    required int memberIndex,
+  }) {
+    final isPaid = _paidMembers.contains(member);
+    return Box(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  '${member.name} pays ${payer.name}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              Text(
+                _formatCurrency(amountInCents),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Pill(
+                  isPaid ? 'Paid' : 'Pending',
+                  bg: isPaid ? mint : const Color(0xFFFFF3D6),
+                  fg: isPaid ? green : const Color(0xFFB7791F),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  key: ValueKey('settle-payment-$memberIndex'),
+                  onPressed: amountInCents == 0
+                      ? null
+                      : () {
+                          setState(() {
+                            if (isPaid) {
+                              _paidMembers.remove(member);
+                            } else {
+                              _paidMembers.add(member);
+                            }
+                          });
+                        },
+                  child: Text(isPaid ? 'Undo' : 'Mark paid'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ---------- 8. Statistics ----------
