@@ -7,12 +7,9 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:bahinko/models/receipt_line_item.dart';
 import 'package:bahinko/utils/navigation.dart';
 import 'package:bahinko/screens/bill/manual_receipt_entry_screen.dart';
-import 'package:bahinko/screens/bill/assign_items_screen.dart';
-import 'package:bahinko/utils/receipt_ocr.dart';
-import 'package:bahinko/utils/receipt_parser.dart';
+import 'package:bahinko/screens/scan/scanning_screen.dart';
 
 class CameraCapture extends StatefulWidget {
   const CameraCapture({super.key});
@@ -139,39 +136,19 @@ class _CameraCaptureState extends State<CameraCapture>
     }
   }
 
+  /// Hands the photo to the Scanning screen (Figma 8), which reads it
+  /// on-device and organizes the items with AI.
   Future<void> _recognizeReceipt(String path) async {
-    try {
-      final text = await recognizeReceiptText(path);
-      final parsedItems = parseReceiptItems(text ?? '');
-      if (!mounted) return;
-
-      if (parsedItems.isEmpty) {
-        setState(() {
-          _scanError = 'No receipt items were recognized. Try another photo or enter them manually.';
-          _processing = false;
-        });
-        return;
-      }
-
-      setState(() => _processing = false);
-      go(
-        context,
-        AssignItems(
-          receiptItems: [
-            for (final (name, amountInCents) in parsedItems)
-              ReceiptLineItem(name, amountInCents),
-          ],
-          storeName: 'Scanned Receipt',
-        ),
-      );
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _scanError = 'Receipt recognition failed: $error';
-          _processing = false;
-        });
-      }
-    }
+    if (!mounted) return;
+    setState(() => _processing = false);
+    // pushReplacement: Back from the result skips the camera.
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            ScanningScreen(imagePath: path, imageBytes: _capturedImage),
+      ),
+    );
   }
 
   @override
