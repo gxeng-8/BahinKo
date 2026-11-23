@@ -13,6 +13,7 @@ import 'package:bahinko/models/group.dart';
 import 'package:bahinko/models/person.dart';
 import 'package:bahinko/screens/group/group_detail_screen.dart';
 import 'package:bahinko/screens/group/widgets/add_member_dialog.dart';
+import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/widgets/app_page.dart';
@@ -57,6 +58,9 @@ class _CreateGroupState extends State<CreateGroup> {
 
   /// Members picked so far. "You" is always in the group.
   final List<Person> _selected = [you];
+
+  /// True while the group is being saved (disables the button).
+  bool _saving = false;
 
   @override
   void initState() {
@@ -116,21 +120,31 @@ class _CreateGroupState extends State<CreateGroup> {
   }
 
   /// Validates the whole form; if OK, saves the group and opens it.
-  void _submit() {
+  /// Validates the whole form; if OK, saves the group and opens it.
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return; // errors show inline
 
-    final group = addGroup(
-      name: _nameController.text,
-      category: _category,
-      members: List.of(_selected),
-    );
-    // pushReplacement: pressing Back from the new group returns to Home,
-    // not to this (now finished) form.
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => GroupDetail(group: group)),
-    );
-    showAppToast(context, '${group.name} created');
+    setState(() => _saving = true); // loading state on the button
+    try {
+      final group = await GroupService.instance.createGroup(
+        name: _nameController.text,
+        category: _category,
+        // "You" is added by the service with your real user ID.
+        others: _selected.where((p) => p != you).toList(),
+      );
+      if (!mounted) return;
+      // pushReplacement: pressing Back from the new group returns to Home,
+      // not to this (now finished) form.
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => GroupDetail(groupId: group.id)),
+      );
+      showAppToast(context, '${group.name} created');
+    } on GroupFailure catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      showAppToast(context, e.message); // error state
+    }
   }
 
   @override
@@ -239,7 +253,10 @@ class _CreateGroupState extends State<CreateGroup> {
         ],
       ),
     ),
-    bottom: Btn('Create Group', _submit),
+    bottom: Btn(
+      _saving ? 'Creating…' : 'Create Group',
+      _saving ? null : _submit,
+    ),
   );
 }
 

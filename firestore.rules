@@ -1,0 +1,57 @@
+rules_version = '2';
+
+// BahinKo Firestore security rules.
+// Deploy with: firebase deploy --only firestore:rules
+//
+// Rule of thumb: only members of a group (their uid is in memberIds) can
+// see or change it. Everything not allowed below is denied.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isMemberOf(group) {
+      return signedIn() && request.auth.uid in group.memberIds;
+    }
+
+    // Basic shape checks so a buggy or tampered app can't save junk.
+    function validGroup(g) {
+      return g.name is string && g.name.size() >= 3 && g.name.size() <= 40
+        && g.createdBy is string
+        && g.memberIds is list
+        && g.members is list && g.members.size() <= 50;
+    }
+
+    match /groups/{groupId} {
+      // Read: members only. (The app's "my groups" query filters by
+      // memberIds array-contains my uid, which these rules require.)
+      allow read: if isMemberOf(resource.data);
+
+      // Create: you must be the creator and the only app-user member.
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.memberIds == [request.auth.uid]
+        && validGroup(request.resource.data);
+
+      // Update (e.g. add a guest): members only; nobody can change who
+      // created the group or which accounts are in it.
+      // STEP 5 (join by invite code) will allow adding yourself here.
+      allow update: if isMemberOf(resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.memberIds == resource.data.memberIds
+        && validGroup(request.resource.data);
+
+      // Delete: only the person who created the group.
+      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
+
+      // Expenses inherit access from their group.
+      match /expenses/{expenseId} {
+        allow read, write: if isMemberOf(
+          get(/databases/$(database)/documents/groups/$(groupId)).data
+        );
+      }
+    }
+  }
+}

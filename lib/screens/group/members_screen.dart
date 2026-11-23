@@ -7,25 +7,27 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:bahinko/data/mock_data.dart';
+import 'package:bahinko/data/in_memory_group_service.dart' show demoGroupId;
 import 'package:bahinko/models/group.dart';
 import 'package:bahinko/models/person.dart';
 import 'package:bahinko/screens/group/invite_members_screen.dart';
 import 'package:bahinko/screens/group/widgets/add_member_dialog.dart';
+import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/utils/navigation.dart';
 import 'package:bahinko/widgets/app_page.dart';
 import 'package:bahinko/widgets/app_toast.dart';
+import 'package:bahinko/widgets/async_state_view.dart';
 import 'package:bahinko/widgets/avatar.dart';
 import 'package:bahinko/widgets/btn.dart';
 import 'package:bahinko/widgets/pill.dart';
 
 class Members extends StatefulWidget {
-  /// Shows [group]'s members; defaults to the sample group.
-  const Members({super.key, this.group});
+  /// Shows the members of [groupId] (defaults to the sample group).
+  const Members({super.key, this.groupId = demoGroupId});
 
-  final Group? group;
+  final String groupId;
 
   @override
   State<Members> createState() => _MembersState();
@@ -35,7 +37,20 @@ class _MembersState extends State<Members> {
   /// Current text in the search box (lower-cased for matching).
   String _query = '';
 
-  Group get _group => widget.group ?? demoGroup;
+  /// Live group data (created once, see initState).
+  late Stream<Group> _group;
+
+  /// Latest loaded group, used by the Copy/Invite buttons.
+  Group? _latest;
+
+  @override
+  void initState() {
+    super.initState();
+    _group = GroupService.instance.watchGroup(widget.groupId);
+  }
+
+  void _reload() =>
+      setState(() => _group = GroupService.instance.watchGroup(widget.groupId));
 
   /// Members whose name contains the search text (case-insensitive).
   List<Person> _filter(List<Person> all) => _query.isEmpty
@@ -43,8 +58,19 @@ class _MembersState extends State<Members> {
       : all.where((p) => p.name.toLowerCase().contains(_query)).toList();
 
   Future<void> _copyInviteLink() async {
-    await Clipboard.setData(ClipboardData(text: _group.inviteLink));
+    final link = _latest?.inviteLink;
+    if (link == null) return;
+    await Clipboard.setData(ClipboardData(text: link));
     if (mounted) showAppToast(context, 'Invite link copied');
+  }
+
+  /// Saves a new guest; shows the error if saving fails.
+  Future<void> _addMember(String name) async {
+    try {
+      await GroupService.instance.addGuest(widget.groupId, name);
+    } on GroupFailure catch (e) {
+      if (mounted) showAppToast(context, e.message);
+    }
   }
 
   @override
@@ -64,34 +90,39 @@ class _MembersState extends State<Members> {
               setState(() => _query = text.trim().toLowerCase()),
         ),
         const SizedBox(height: 12),
-        ValueListenableBuilder<List<Person>>(
-          valueListenable: _group.members,
-          builder: (context, all, _) {
-            final shown = _filter(all);
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${_group.name} members (${all.length})',
-                  style: AppText.caption,
-                ),
-                const SizedBox(height: 8),
-                // Empty state when the search matches no one.
-                if (shown.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Center(
-                      child: Text(
-                        'No members match "$_query"',
-                        style: AppText.caption,
+        StreamBuilder<Group>(
+          stream: _group,
+          builder: (context, snapshot) => AsyncStateView<Group>(
+            snapshot: snapshot,
+            onRetry: _reload,
+            builder: (group) {
+              _latest = group;
+              final shown = _filter(group.members);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${group.name} members (${group.members.length})',
+                    style: AppText.caption,
+                  ),
+                  const SizedBox(height: 8),
+                  // Empty state when the search matches no one.
+                  if (shown.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Center(
+                        child: Text(
+                          'No members match "$_query"',
+                          style: AppText.caption,
+                        ),
                       ),
-                    ),
-                  )
-                else
-                  _MemberCard(members: shown),
-              ],
-            );
-          },
+                    )
+                  else
+                    _MemberCard(members: shown),
+                ],
+              );
+            },
+          ),
         ),
         const SizedBox(height: 16),
         _InviteCard(onCopy: _copyInviteLink),
@@ -101,16 +132,14 @@ class _MembersState extends State<Members> {
       IconButton(
         tooltip: 'Invite',
         icon: const Icon(Icons.qr_code_2),
-        onPressed: () => go(context, InviteMembers(group: _group)),
+        onPressed: () => go(context, InviteMembers(groupId: widget.groupId)),
       ),
       IconButton(
         tooltip: 'Add member',
         icon: const Icon(Icons.add),
         onPressed: () => showDialog<void>(
           context: context,
-          builder: (_) => AddMemberDialog(
-            onAdd: (name) => addMember(name, to: _group.members),
-          ),
+          builder: (_) => AddMemberDialog(onAdd: _addMember),
         ),
       ),
     ],
@@ -168,6 +197,7 @@ class _MemberCard extends StatelessWidget {
         ),
       );
     }
+    if (p.status == 'Settled') return Pill.paid(text: 'Settled');
     if (p.status == 'Paid') {
       return Pill.paid(
         text: p.pay == 'Paid the bill' ? 'Paid the bill' : 'Paid',

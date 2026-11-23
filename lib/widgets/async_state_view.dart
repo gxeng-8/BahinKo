@@ -3,14 +3,14 @@
 ///
 /// Usage with a Future or Stream:
 ///
-///     FutureBuilder<List<Bill>>(
-///       future: billService.fetchBills(),
-///       builder: (context, snap) => AsyncStateView<List<Bill>>(
+///     StreamBuilder<List<Group>>(
+///       stream: _groupsStream, // create it in initState, not in build!
+///       builder: (context, snap) => AsyncStateView<List<Group>>(
 ///         snapshot: snap,
-///         isEmpty: (bills) => bills.isEmpty,
-///         emptyMessage: 'No bills yet. Scan a receipt to start.',
-///         onRetry: () => setState(() {}),
-///         builder: (bills) => BillList(bills),
+///         isEmpty: (groups) => groups.isEmpty,
+///         emptyMessage: 'No groups yet.',
+///         onRetry: _reload,
+///         builder: (groups) => GroupList(groups),
 ///       ),
 ///     )
 library;
@@ -29,6 +29,7 @@ class AsyncStateView<T> extends StatelessWidget {
     this.emptyMessage = 'Nothing here yet.',
     this.emptyIcon = Icons.inbox_outlined,
     this.onRetry,
+    this.compact = false,
   });
 
   final AsyncSnapshot<T> snapshot;
@@ -40,29 +41,38 @@ class AsyncStateView<T> extends StatelessWidget {
   final IconData emptyIcon;
   final VoidCallback? onRetry;
 
+  /// Smaller padding, for use inside a section rather than a whole page.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
-    // 1) Error state
+    // 1) Error state. Services throw errors whose toString() is a
+    //    user-friendly message (GroupFailure, AuthFailure).
     if (snapshot.hasError) {
+      final error = snapshot.error;
+      final text = error is Exception && error.toString().isNotEmpty
+          ? error.toString()
+          : 'Something went wrong. Check your connection and try again.';
       return _Message(
         icon: Icons.cloud_off_outlined,
-        text: 'Something went wrong. Check your connection and try again.',
+        text: text.replaceFirst('Exception: ', ''),
+        compact: compact,
         action: onRetry == null ? null : Btn('Retry', onRetry, outlined: true),
       );
     }
     // 2) Loading state
     if (!snapshot.hasData) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
-          child: CircularProgressIndicator(color: green),
+          padding: EdgeInsets.all(compact ? 16 : 32),
+          child: const CircularProgressIndicator(color: green),
         ),
       );
     }
     // 3) Empty state
     final data = snapshot.data as T;
     if (isEmpty?.call(data) ?? false) {
-      return _Message(icon: emptyIcon, text: emptyMessage);
+      return _Message(icon: emptyIcon, text: emptyMessage, compact: compact);
     }
     // 4) Loaded data
     return builder(data);
@@ -70,20 +80,26 @@ class AsyncStateView<T> extends StatelessWidget {
 }
 
 class _Message extends StatelessWidget {
-  const _Message({required this.icon, required this.text, this.action});
+  const _Message({
+    required this.icon,
+    required this.text,
+    required this.compact,
+    this.action,
+  });
 
   final IconData icon;
   final String text;
+  final bool compact;
   final Widget? action;
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.all(32),
+    padding: EdgeInsets.all(compact ? 12 : 32),
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         CircleAvatar(
-          radius: 28,
+          radius: compact ? 20 : 28,
           backgroundColor: mint,
           child: Icon(icon, color: green),
         ),

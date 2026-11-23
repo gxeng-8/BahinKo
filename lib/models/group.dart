@@ -1,6 +1,6 @@
 /// Group-related models: a group's category, its expenses, and the group
-/// itself. These are plain Dart classes; later the Firestore service will
-/// build them from documents (see DEVELOPMENT_PLAN.md §3.3).
+/// itself. These are plain, immutable Dart classes with no Firebase code;
+/// the services convert them to and from Firestore documents.
 library;
 
 import 'package:flutter/material.dart';
@@ -38,6 +38,7 @@ GroupCategory categoryNamed(String name) => groupCategories.firstWhere(
 );
 
 /// One expense inside a group (e.g. "Samgyup House ₱2,500").
+/// Stored in Firestore at groups/{groupId}/expenses/{expenseId}.
 class GroupExpense {
   const GroupExpense({
     required this.title,
@@ -58,35 +59,61 @@ class GroupExpense {
   /// How many members still owe money for this expense (0 = all settled).
   final int unpaidCount;
   final IconData icon;
+
+  /// Builds an expense from a Firestore map (safe defaults for gaps).
+  factory GroupExpense.fromMap(Map<String, dynamic> map) => GroupExpense(
+    title: map['title'] as String? ?? 'Expense',
+    paidBy: map['paidBy'] as String? ?? '',
+    splitWays: (map['splitWays'] as num?)?.toInt() ?? 1,
+    amountCents: (map['amountCents'] as num?)?.toInt() ?? 0,
+    unpaidCount: (map['unpaidCount'] as num?)?.toInt() ?? 0,
+  );
 }
 
 /// A group of people who split bills together ("Dinner at Jaro").
+/// Stored in Firestore at groups/{groupId}.
 class Group {
-  Group({
+  const Group({
     required this.id,
     required this.name,
     required this.category,
     required this.members,
     required this.inviteCode,
-    List<GroupExpense>? expenses,
-  }) : expenses = expenses ?? [];
+    this.totalCents = 0,
+    this.expenseCount = 0,
+    this.unpaidCount = 0,
+    this.createdAt,
+  });
 
   final String id;
   final String name;
   final GroupCategory category;
-
-  /// Members are in a ValueNotifier so screens rebuild when someone is added.
-  final ValueNotifier<List<Person>> members;
-  final List<GroupExpense> expenses;
+  final List<Person> members;
 
   /// Short code used in the invite link and QR code.
   final String inviteCode;
 
+  /// Summary numbers kept on the group itself, so the Home cards don't
+  /// have to load every expense (updated whenever an expense changes).
+  final int totalCents;
+  final int expenseCount;
+  final int unpaidCount;
+
+  /// Null for a moment after creation, until the server sets the time.
+  final DateTime? createdAt;
+
   String get inviteLink => 'https://bahinko.app/j/$inviteCode';
 
-  /// Total of all expenses, in centavos.
-  int get totalCents => expenses.fold(0, (sum, e) => sum + e.amountCents);
-
-  /// Number of member-payments still unpaid across all expenses.
-  int get unpaidCount => expenses.fold(0, (sum, e) => sum + e.unpaidCount);
+  /// Returns a copy with a different member list (groups are immutable).
+  Group copyWith({List<Person>? members}) => Group(
+    id: id,
+    name: name,
+    category: category,
+    members: members ?? this.members,
+    inviteCode: inviteCode,
+    totalCents: totalCents,
+    expenseCount: expenseCount,
+    unpaidCount: unpaidCount,
+    createdAt: createdAt,
+  );
 }

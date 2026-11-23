@@ -82,6 +82,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(const MaterialApp(home: Members()));
+    await tester.pump(); // Members now loads its group from a stream
 
     expect(find.text('Dinner at Jaro members (5)'), findsOneWidget);
     await tester.tap(find.byTooltip('Add member'));

@@ -4,7 +4,6 @@ library;
 
 import 'package:flutter/material.dart';
 
-import 'package:bahinko/data/mock_data.dart';
 import 'package:bahinko/models/group.dart';
 import 'package:bahinko/screens/bill/manual_receipt_entry_screen.dart';
 import 'package:bahinko/screens/group/create_group_screen.dart';
@@ -12,10 +11,12 @@ import 'package:bahinko/screens/group/group_detail_screen.dart';
 import 'package:bahinko/screens/history/activity_history_screen.dart';
 import 'package:bahinko/screens/scan/scan_receipt_screen.dart';
 import 'package:bahinko/screens/settle/settle_up_screen.dart';
+import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/utils/currency.dart';
 import 'package:bahinko/utils/navigation.dart';
+import 'package:bahinko/widgets/async_state_view.dart';
 import 'package:bahinko/widgets/icon_tile.dart';
 import 'package:bahinko/widgets/pill.dart';
 import 'package:bahinko/widgets/section_header.dart';
@@ -230,23 +231,41 @@ class _CategoryGrid extends StatelessWidget {
   );
 }
 
-/// Horizontal list of group cards. Rebuilds when [groups] changes, so a
-/// group made on the Create Group screen shows up right away.
-class _ActiveGroups extends StatelessWidget {
+/// Horizontal list of the user's groups, loaded live from [GroupService].
+/// Shows loading, empty, and error (with Retry) states.
+class _ActiveGroups extends StatefulWidget {
   const _ActiveGroups();
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder<List<Group>>(
-    valueListenable: groups,
-    builder: (context, list, _) {
-      // Empty state: no groups yet.
-      if (list.isEmpty) {
-        return Text(
-          'No groups yet. Tap "New group" to start one.',
-          style: AppText.caption,
-        );
-      }
-      return SizedBox(
+  State<_ActiveGroups> createState() => _ActiveGroupsState();
+}
+
+class _ActiveGroupsState extends State<_ActiveGroups> {
+  /// Created once in initState. Creating the stream inside build() would
+  /// open a new Firestore listener every time the screen rebuilds.
+  late Stream<List<Group>> _groups;
+
+  @override
+  void initState() {
+    super.initState();
+    _groups = GroupService.instance.watchMyGroups();
+  }
+
+  /// Retry button: open a fresh stream after an error.
+  void _reload() =>
+      setState(() => _groups = GroupService.instance.watchMyGroups());
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<Group>>(
+    stream: _groups,
+    builder: (context, snapshot) => AsyncStateView<List<Group>>(
+      snapshot: snapshot,
+      compact: true,
+      onRetry: _reload,
+      isEmpty: (list) => list.isEmpty,
+      emptyIcon: Icons.groups_outlined,
+      emptyMessage: 'No groups yet. Tap "New group" to start one.',
+      builder: (list) => SizedBox(
         height: 140,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
@@ -255,8 +274,8 @@ class _ActiveGroups extends StatelessWidget {
           itemBuilder: (context, i) =>
               _GroupCard(group: list[i], highlighted: i == 0),
         ),
-      );
-    },
+      ),
+    ),
   );
 }
 
@@ -271,7 +290,7 @@ class _GroupCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final fg = highlighted ? Colors.white : deep;
     return GestureDetector(
-      onTap: () => go(context, GroupDetail(group: group)),
+      onTap: () => go(context, GroupDetail(groupId: group.id)),
       child: Container(
         width: 220,
         padding: const EdgeInsets.all(16),
@@ -289,17 +308,11 @@ class _GroupCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: AppText.display(18, color: fg),
             ),
-            ValueListenableBuilder(
-              valueListenable: group.members,
-              builder: (context, members, _) => Text(
-                '${members.length} members · ${group.unpaidCount} unpaid',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: fg.withValues(alpha: 0.8),
-                  fontSize: 12,
-                ),
-              ),
+            Text(
+              '${group.members.length} members · ${group.unpaidCount} unpaid',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: fg.withValues(alpha: 0.8), fontSize: 12),
             ),
             const Spacer(),
             Text(

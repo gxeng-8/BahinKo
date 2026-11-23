@@ -2,12 +2,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:bahinko/data/in_memory_group_service.dart';
 import 'package:bahinko/data/mock_data.dart';
+import 'package:bahinko/models/group.dart';
+import 'package:bahinko/models/person.dart';
+import 'package:bahinko/screens/group/group_detail_screen.dart';
 import 'package:bahinko/screens/auth/app_lock_screen.dart';
 import 'package:bahinko/screens/group/create_group_screen.dart';
 import 'package:bahinko/screens/group/invite_members_screen.dart';
 import 'package:bahinko/screens/group/members_screen.dart';
 import 'package:bahinko/screens/shell.dart';
+import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/utils/currency.dart';
 
 Widget _app(Widget home) => MaterialApp(home: home);
@@ -28,10 +33,13 @@ Future<void> _typePin(WidgetTester tester, String pin) async {
 }
 
 void main() {
+  late InMemoryGroupService service;
+
   setUp(() {
-    // Reset shared sample data so tests don't affect each other.
+    // Fresh sample data for every test so they don't affect each other.
     groupMembers.value = people;
-    groups.value = groups.value.take(2).toList();
+    service = InMemoryGroupService();
+    GroupService.instance = service;
   });
 
   test('formatMoney adds commas and two decimals', () {
@@ -82,8 +90,8 @@ void main() {
     await tester.tap(find.text('Create Group'));
     await tester.pumpAndSettle();
 
-    expect(groups.value.last.name, 'Baguio Trip');
-    expect(groups.value.last.members.value.length, 2);
+    expect(service.groups.first.name, 'Baguio Trip'); // newest first
+    expect(service.groups.first.members.length, 2); // You + Mia
     expect(
       find.text('No expenses yet. Add one or scan a receipt.'),
       findsOneWidget,
@@ -95,6 +103,7 @@ void main() {
   ) async {
     _phoneSize(tester);
     await tester.pumpWidget(_app(const Members()));
+    await tester.pump(); // let the group stream deliver its data
 
     await tester.enterText(find.byKey(const ValueKey('member-search')), 'mi');
     await tester.pump();
@@ -109,6 +118,7 @@ void main() {
   testWidgets('invite: guest form validates and adds a guest', (tester) async {
     _phoneSize(tester);
     await tester.pumpWidget(_app(const InviteMembers()));
+    await tester.pump(); // let the group stream deliver its data
 
     await tester.ensureVisible(find.text('Add guest'));
     await tester.tap(find.text('Add guest'));
@@ -127,4 +137,41 @@ void main() {
     expect(find.text('6 members', findRichText: true), findsNothing);
     expect(find.text('Scan to join · 6 members'), findsOneWidget);
   });
+
+  testWidgets('group detail: loading first, then error with Retry', (
+    tester,
+  ) async {
+    _phoneSize(tester);
+    GroupService.instance = _OfflineService();
+    await tester.pumpWidget(_app(const GroupDetail(groupId: 'x')));
+
+    // Loading state: the stream hasn't delivered anything yet.
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    await tester.pump();
+    expect(find.text("Can't reach the server."), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+  });
+}
+
+/// A service whose every stream fails, like a phone with no internet.
+class _OfflineService implements GroupService {
+  Stream<T> _fail<T>() =>
+      Stream.error(const GroupFailure("Can't reach the server."));
+
+  @override
+  Stream<List<Group>> watchMyGroups() => _fail();
+  @override
+  Stream<Group> watchGroup(String groupId) => _fail();
+  @override
+  Stream<List<GroupExpense>> watchExpenses(String groupId) => _fail();
+  @override
+  Future<Group> createGroup({
+    required String name,
+    required GroupCategory category,
+    required List<Person> others,
+  }) => Future.error(const GroupFailure("Can't reach the server."));
+  @override
+  Future<void> addGuest(String groupId, String name) =>
+      Future.error(const GroupFailure("Can't reach the server."));
 }

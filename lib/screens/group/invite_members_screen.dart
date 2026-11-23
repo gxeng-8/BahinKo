@@ -7,20 +7,22 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
-import 'package:bahinko/data/mock_data.dart';
+import 'package:bahinko/data/in_memory_group_service.dart' show demoGroupId;
 import 'package:bahinko/models/group.dart';
 import 'package:bahinko/models/person.dart';
+import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/widgets/app_page.dart';
 import 'package:bahinko/widgets/app_toast.dart';
+import 'package:bahinko/widgets/async_state_view.dart';
 import 'package:bahinko/widgets/btn.dart';
 
 class InviteMembers extends StatefulWidget {
-  /// Invite screen for [group]; defaults to the sample group.
-  const InviteMembers({super.key, this.group});
+  /// Invite screen for [groupId] (defaults to the sample group).
+  const InviteMembers({super.key, this.groupId = demoGroupId});
 
-  final Group? group;
+  final String groupId;
 
   @override
   State<InviteMembers> createState() => _InviteMembersState();
@@ -30,7 +32,20 @@ class _InviteMembersState extends State<InviteMembers> {
   final _formKey = GlobalKey<FormState>();
   final _guestController = TextEditingController();
 
-  Group get _group => widget.group ?? demoGroup;
+  /// Live group data (created once, see initState).
+  late Stream<Group> _group;
+
+  /// Latest loaded group: used by the buttons and the duplicate-name check.
+  Group? _latest;
+
+  /// True while a guest is being saved (disables the button).
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _group = GroupService.instance.watchGroup(widget.groupId);
+  }
 
   @override
   void dispose() {
@@ -38,17 +53,20 @@ class _InviteMembersState extends State<InviteMembers> {
     super.dispose();
   }
 
-  Future<void> _copyLink() async {
-    await Clipboard.setData(ClipboardData(text: _group.inviteLink));
+  void _reload() =>
+      setState(() => _group = GroupService.instance.watchGroup(widget.groupId));
+
+  Future<void> _copyLink(Group group) async {
+    await Clipboard.setData(ClipboardData(text: group.inviteLink));
     if (mounted) showAppToast(context, 'Invite link copied');
   }
 
   /// Opens the phone's share sheet (Messenger, Viber, SMS… appear there).
-  Future<void> _share() async {
+  Future<void> _share(Group group) async {
     try {
       await SharePlus.instance.share(
         ShareParams(
-          text: 'Join "${_group.name}" on BahinKo: ${_group.inviteLink}',
+          text: 'Join "${group.name}" on BahinKo: ${group.inviteLink}',
           subject: 'BahinKo group invite',
         ),
       );
@@ -56,12 +74,13 @@ class _InviteMembersState extends State<InviteMembers> {
       // Error feedback: some desktops have no share sheet.
       if (mounted) {
         showAppToast(context, "Couldn't open sharing. Link copied instead.");
-        await _copyLink();
+        await _copyLink(group);
       }
     }
   }
 
-  /// Guest name: required, 2–30 characters, letters/spaces/.-' only.
+  /// Guest name: required, 2–30 characters, letters/spaces/.-' only,
+  /// and not already in the group.
   String? _validateGuest(String? value) {
     final name = value?.trim() ?? '';
     if (name.isEmpty) return "Enter the guest's name";
@@ -70,72 +89,98 @@ class _InviteMembersState extends State<InviteMembers> {
     if (!RegExp(r"^[A-Za-zÀ-ÿñÑ .'-]+$").hasMatch(name)) {
       return 'Use letters only';
     }
-    final taken = _group.members.value.any(
+    final taken = (_latest?.members ?? const <Person>[]).any(
       (p) => p.name.toLowerCase() == name.toLowerCase(),
     );
     if (taken) return '$name is already in this group';
     return null;
   }
 
-  void _addGuest() {
+  /// Validates the form, saves the guest, and shows the result.
+  Future<void> _addGuest() async {
     if (!_formKey.currentState!.validate()) return;
     final name = _guestController.text.trim();
-    addMember(name, to: _group.members);
-    _guestController.clear();
-    FocusScope.of(context).unfocus(); // hide the keyboard
-    showAppToast(context, '$name added as a guest');
+    setState(() => _saving = true);
+    try {
+      await GroupService.instance.addGuest(widget.groupId, name);
+      if (!mounted) return;
+      _guestController.clear();
+      FocusScope.of(context).unfocus(); // hide the keyboard
+      showAppToast(context, '$name added as a guest');
+    } on GroupFailure catch (e) {
+      if (mounted) showAppToast(context, e.message); // error state
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) => AppPage(
     'Invite',
-    Column(
-      children: [
-        _QrCard(group: _group),
-        const SizedBox(height: 16),
-        Btn('Copy invite link', _copyLink),
-        const SizedBox(height: 10),
-        Btn('Share via Messenger', _share, outlined: true),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 16),
-          child: Row(
+    StreamBuilder<Group>(
+      stream: _group,
+      builder: (context, snapshot) => AsyncStateView<Group>(
+        snapshot: snapshot,
+        onRetry: _reload,
+        builder: (group) {
+          _latest = group;
+          return Column(
             children: [
-              Expanded(child: Divider(color: border)),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                child: Text('or', style: AppText.caption),
-              ),
-              Expanded(child: Divider(color: border)),
-            ],
-          ),
-        ),
-        Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Add a guest instead', style: AppText.section),
-              const SizedBox(height: 8),
-              TextFormField(
-                key: const ValueKey('guest-name'),
-                controller: _guestController,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Guest name',
-                  hintText: 'e.g. Rico',
+              _QrCard(group: group),
+              const SizedBox(height: 16),
+              Btn('Copy invite link', () => _copyLink(group)),
+              const SizedBox(height: 10),
+              Btn('Share via Messenger', () => _share(group), outlined: true),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Row(
+                  children: [
+                    Expanded(child: Divider(color: border)),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Text('or', style: AppText.caption),
+                    ),
+                    Expanded(child: Divider(color: border)),
+                  ],
                 ),
-                validator: _validateGuest,
-                onFieldSubmitted: (_) => _addGuest(),
               ),
-              const SizedBox(height: 6),
-              const Text(
-                'Guests can view their share through a link. No install needed.',
-                style: AppText.caption,
-              ),
-              const SizedBox(height: 12),
-              Btn('Add guest', _addGuest, outlined: true),
+              _guestForm(),
             ],
+          );
+        },
+      ),
+    ),
+  );
+
+  /// "Add a guest instead" form.
+  Widget _guestForm() => Form(
+    key: _formKey,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Add a guest instead', style: AppText.section),
+        const SizedBox(height: 8),
+        TextFormField(
+          key: const ValueKey('guest-name'),
+          controller: _guestController,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Guest name',
+            hintText: 'e.g. Rico',
           ),
+          validator: _validateGuest,
+          onFieldSubmitted: (_) => _addGuest(),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Guests can view their share through a link. No install needed.',
+          style: AppText.caption,
+        ),
+        const SizedBox(height: 12),
+        Btn(
+          _saving ? 'Adding…' : 'Add guest',
+          _saving ? null : _addGuest,
+          outlined: true,
         ),
       ],
     ),
@@ -160,12 +205,9 @@ class _QrCard extends StatelessWidget {
     child: Column(
       children: [
         Text(group.name, style: AppText.display(20, color: deep)),
-        ValueListenableBuilder<List<Person>>(
-          valueListenable: group.members,
-          builder: (context, members, _) => Text(
-            'Scan to join · ${members.length} members',
-            style: AppText.caption,
-          ),
+        Text(
+          'Scan to join · ${group.members.length} members',
+          style: AppText.caption,
         ),
         const SizedBox(height: 12),
         QrImageView(
