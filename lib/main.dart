@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'models/person.dart';
 import 'theme/app_colors.dart';
@@ -183,10 +184,10 @@ class Onboarding extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
               Container(
-                width: 64,
-                height: 64,
+                width: 56,
+                height: 56,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
@@ -198,7 +199,7 @@ class Onboarding extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
               const Text(
                 'BahinKo',
                 style: TextStyle(
@@ -212,10 +213,10 @@ class Onboarding extends StatelessWidget {
                 'Split bills with friends without the awkward math.',
                 style: TextStyle(color: Colors.white, fontSize: 18),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
               for (final p in perks)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: Row(
                     children: [
                       const Icon(Icons.check_circle, color: Colors.white70),
@@ -298,7 +299,7 @@ class _ShellState extends State<Shell> {
           const SizedBox(width: 48),
           IconButton(
             icon: const Icon(Icons.description_outlined, color: Colors.grey),
-            onPressed: () => go(context, const Members()),
+            onPressed: () => go(context, const PersonalLedger()),
           ),
           IconButton(
             icon: const Icon(Icons.person_outline, color: Colors.grey),
@@ -393,7 +394,7 @@ class Home extends StatelessWidget {
                         context,
                         Icons.history,
                         'History',
-                        const SplitSummary(),
+                        const ActivityHistory(),
                       ),
                     ],
                   ),
@@ -409,15 +410,24 @@ class Home extends StatelessWidget {
                   physics: const NeverScrollableScrollPhysics(),
                   children: [
                     for (final c in cats)
-                      Column(
-                        children: [
-                          CircleAvatar(
-                            backgroundColor: mint,
-                            child: Icon(c.$2, color: green),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(c.$1, style: const TextStyle(fontSize: 11)),
-                        ],
+                      InkWell(
+                        onTap: () {
+                          if (c.$1 == 'Subscriptions') {
+                            go(context, const RecurringBills());
+                          } else if (c.$1 == 'Bills') {
+                            go(context, const PersonalLedger());
+                          }
+                        },
+                        child: Column(
+                          children: [
+                            CircleAvatar(
+                              backgroundColor: mint,
+                              child: Icon(c.$2, color: green),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(c.$1, style: const TextStyle(fontSize: 11)),
+                          ],
+                        ),
                       ),
                   ],
                 ),
@@ -1801,6 +1811,49 @@ class _SettleUpState extends State<SettleUp> {
             ],
           ),
           const SizedBox(height: 8),
+          if (!isPaid)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      key: ValueKey('settle-payment-gcash-$memberIndex'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: green,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: amountInCents == 0
+                          ? null
+                          : () => _openPayment(
+                              context,
+                              member,
+                              payer,
+                              amountInCents,
+                              'GCash',
+                            ),
+                      child: const Text('Pay with GCash'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      key: ValueKey('settle-payment-maya-$memberIndex'),
+                      onPressed: amountInCents == 0
+                          ? null
+                          : () => _openPayment(
+                              context,
+                              member,
+                              payer,
+                              amountInCents,
+                              'Maya',
+                            ),
+                      child: const Text('Pay with Maya'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Row(
             children: [
               Expanded(
@@ -1816,24 +1869,978 @@ class _SettleUpState extends State<SettleUp> {
                   key: ValueKey('settle-payment-$memberIndex'),
                   onPressed: amountInCents == 0
                       ? null
-                      : () {
-                          setState(() {
-                            if (isPaid) {
-                              _paidMembers.remove(member);
-                            } else {
-                              _paidMembers.add(member);
-                            }
-                          });
-                        },
-                  child: Text(isPaid ? 'Undo' : 'Mark paid'),
+                      : () => isPaid
+                            ? setState(() => _paidMembers.remove(member))
+                            : setState(() => _paidMembers.add(member)),
+                  child: Text(isPaid ? 'Undo' : 'Pay with Cash'),
                 ),
               ),
             ],
           ),
+          if (!isPaid) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                key: ValueKey('send-reminder-$memberIndex'),
+                onPressed: () =>
+                    _openReminder(context, member, payer, amountInCents),
+                icon: const Icon(Icons.notifications_outlined, size: 18),
+                label: const Text('Send reminder'),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
+
+  Future<void> _openPayment(
+    BuildContext context,
+    Person member,
+    Person payer,
+    int amountInCents,
+    String provider,
+  ) async {
+    final completed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _PaymentOpeningDialog(
+        provider: provider,
+        member: member,
+        payer: payer,
+        amountInCents: amountInCents,
+      ),
+    );
+
+    if (completed != true || !context.mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => _PaymentConfirmationDialog(
+        provider: provider,
+        amountInCents: amountInCents,
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final submitted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _PaymentProofDialog(
+        member: member,
+        payer: payer,
+        provider: provider,
+        amountInCents: amountInCents,
+      ),
+    );
+
+    if (submitted == true) {
+      setState(() => _paidMembers.add(member));
+    }
+  }
+
+  Future<void> _openReminder(
+    BuildContext context,
+    Person member,
+    Person payer,
+    int amountInCents,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _ReminderSheet(
+        member: member,
+        payer: payer,
+        amountInCents: amountInCents,
+      ),
+    );
+  }
+}
+
+class _PaymentOpeningDialog extends StatelessWidget {
+  const _PaymentOpeningDialog({
+    required this.provider,
+    required this.member,
+    required this.payer,
+    required this.amountInCents,
+  });
+
+  final String provider;
+  final Person member;
+  final Person payer;
+  final int amountInCents;
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+    insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 4),
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: mint,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const Icon(
+              Icons.account_balance_wallet_outlined,
+              color: green,
+              size: 36,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Opening $provider...',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Hang on, we’re handing you over to the app.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.black54),
+          ),
+          const SizedBox(height: 20),
+          const CircularProgressIndicator(color: green),
+          const SizedBox(height: 20),
+          Text(
+            '${member.name} pays ${payer.name}',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _formatCurrency(amountInCents),
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              key: const ValueKey('continue-payment-confirmation'),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Continue'),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _PaymentConfirmationDialog extends StatelessWidget {
+  const _PaymentConfirmationDialog({
+    required this.provider,
+    required this.amountInCents,
+  });
+
+  final String provider;
+  final int amountInCents;
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+    insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: const BoxDecoration(
+              color: mint,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check, color: green, size: 42),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Did you complete the payment?',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Tell us if the $provider payment is complete.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.black54),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _formatCurrency(amountInCents),
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              key: const ValueKey('payment-confirmed-yes'),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Yes, I paid'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              key: const ValueKey('payment-confirmed-no'),
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not yet'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _PaymentProofDialog extends StatefulWidget {
+  const _PaymentProofDialog({
+    required this.member,
+    required this.payer,
+    required this.provider,
+    required this.amountInCents,
+  });
+
+  final Person member;
+  final Person payer;
+  final String provider;
+  final int amountInCents;
+
+  @override
+  State<_PaymentProofDialog> createState() => _PaymentProofDialogState();
+}
+
+class _PaymentProofDialogState extends State<_PaymentProofDialog> {
+  late final TextEditingController _amountController;
+  final TextEditingController _referenceController = TextEditingController();
+  bool _proofAttached = false;
+  bool _confirmedCorrect = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _amountController = TextEditingController(
+      text: (_formatCurrency(widget.amountInCents)).replaceFirst('₱', ''),
+    );
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _referenceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+    insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Add payment proof',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            key: const ValueKey('payment-proof-amount'),
+            controller: _amountController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Amount paid',
+              prefixText: '₱ ',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Pay with ${widget.provider} (${widget.provider == 'GCash' ? '0998 000 7888' : '0921 456 7890'})',
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            key: const ValueKey('payment-proof-upload'),
+            onTap: () => setState(() => _proofAttached = true),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3FBF8),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _proofAttached ? green : const Color(0xFF9DD6C6),
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    _proofAttached ? Icons.check_circle : Icons.image_outlined,
+                    color: green,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _proofAttached
+                        ? 'Payment screenshot attached'
+                        : 'Attach payment proof',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('payment-proof-reference'),
+            controller: _referenceController,
+            decoration: const InputDecoration(
+              labelText: 'Reference no.',
+              hintText: 'Optional',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          CheckboxListTile(
+            key: const ValueKey('payment-proof-confirm'),
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            value: _confirmedCorrect,
+            onChanged: (value) =>
+                setState(() => _confirmedCorrect = value ?? false),
+            title: const Text(
+              'I confirm that your payment is correct',
+              style: TextStyle(fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              key: const ValueKey('submit-payment-proof'),
+              onPressed: _proofAttached && _confirmedCorrect
+                  ? () => Navigator.pop(context, true)
+                  : null,
+              child: const Text('Submit'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _ReminderSheet extends StatefulWidget {
+  const _ReminderSheet({
+    required this.member,
+    required this.payer,
+    required this.amountInCents,
+  });
+
+  final Person member;
+  final Person payer;
+  final int amountInCents;
+
+  @override
+  State<_ReminderSheet> createState() => _ReminderSheetState();
+}
+
+class _ReminderSheetState extends State<_ReminderSheet> {
+  bool _includeDetails = true;
+  bool _sent = false;
+  late final TextEditingController _messageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _messageController = TextEditingController(
+      text:
+          'Hi ${widget.member.name}! Just a friendly reminder to settle your share for dinner.',
+    );
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    top: false,
+    child: Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Send a friendly reminder',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Avatar(widget.member, size: 38),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'To: ${widget.member.name}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    Text(
+                      'Dinner at Jaro · ${_formatCurrency(widget.amountInCents)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('reminder-message'),
+            controller: _messageController,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Message',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            key: const ValueKey('reminder-details-switch'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Include payment details',
+              style: TextStyle(fontSize: 13),
+            ),
+            subtitle: Text(
+              _includeDetails
+                  ? 'Remind ${widget.member.name} to pay ${widget.payer.name}'
+                  : 'Send only the friendly reminder',
+              style: const TextStyle(fontSize: 11),
+            ),
+            value: _includeDetails,
+            onChanged: (value) => setState(() => _includeDetails = value),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              key: const ValueKey('send-reminder-submit'),
+              onPressed: () {
+                setState(() => _sent = true);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Reminder sent to ${widget.member.name}'),
+                  ),
+                );
+                Navigator.pop(context);
+              },
+              child: Text(_sent ? 'Reminder sent' : 'Send reminder'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+// ---------- 16. Recurring Bills ----------
+class RecurringBills extends StatefulWidget {
+  const RecurringBills({super.key});
+
+  @override
+  State<RecurringBills> createState() => _RecurringBillsState();
+}
+
+class _RecurringBillsState extends State<RecurringBills> {
+  final List<_RecurringBill> _bills = [
+    _RecurringBill('Boarding House Bills', 'Every month', '₱2,000', true),
+    _RecurringBill('Electricity', 'Due Oct 15', '₱1,400', true),
+    _RecurringBill('WiFi', 'Due Oct 20', '₱400', false),
+  ];
+
+  void _addBill(String name, String amount, String day) {
+    setState(() {
+      _bills.insert(0, _RecurringBill(name, 'Due $day', amount, true));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AppPage(
+    'Recurring Bills',
+    Column(
+      children: [
+        Box(
+          color: const Color(0xFF74E4A7),
+          Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Recurring Bills',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    Text(
+                      '₱2,000 monthly · 4 members',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              for (final person in people.take(4))
+                Padding(
+                  padding: const EdgeInsets.only(left: 3),
+                  child: Avatar(person, size: 28),
+                ),
+            ],
+          ),
+        ),
+        for (var i = 0; i < _bills.length; i++)
+          Box(
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                backgroundColor: mint,
+                child: Icon(
+                  i == 0
+                      ? Icons.home_outlined
+                      : i == 1
+                      ? Icons.bolt_outlined
+                      : Icons.wifi,
+                  color: green,
+                ),
+              ),
+              title: Text(
+                _bills[i].name,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: Text(_bills[i].schedule),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _bills[i].amount,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(width: 6),
+                  Switch(
+                    value: _bills[i].enabled,
+                    onChanged: (value) =>
+                        setState(() => _bills[i].enabled = value),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        Box(
+          color: lime,
+          const Row(
+            children: [
+              Icon(Icons.notifications_active_outlined, color: green),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Reminders are 1–3 days before the due date',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+    bottom: Btn(
+      '+ Add recurring bill',
+      () => showDialog<void>(
+        context: context,
+        builder: (_) => _AddRecurringBillDialog(onAdd: _addBill),
+      ),
+    ),
+  );
+}
+
+class _RecurringBill {
+  _RecurringBill(this.name, this.schedule, this.amount, this.enabled);
+
+  final String name;
+  final String schedule;
+  final String amount;
+  bool enabled;
+}
+
+class _AddRecurringBillDialog extends StatefulWidget {
+  const _AddRecurringBillDialog({required this.onAdd});
+
+  final void Function(String name, String amount, String day) onAdd;
+
+  @override
+  State<_AddRecurringBillDialog> createState() =>
+      _AddRecurringBillDialogState();
+}
+
+class _AddRecurringBillDialogState extends State<_AddRecurringBillDialog> {
+  final _nameController = TextEditingController();
+  final _amountController = TextEditingController();
+  final _dayController = TextEditingController(text: '15');
+  bool _isMonthly = true;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _amountController.dispose();
+    _dayController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    final amount = _amountController.text.trim();
+    if (name.isEmpty || amount.isEmpty) return;
+    widget.onAdd(name, '₱$amount', _dayController.text.trim());
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Add Recurring Bill'),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            key: const ValueKey('recurring-name'),
+            controller: _nameController,
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              hintText: 'Boarding House Bills',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('recurring-amount'),
+            controller: _amountController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Amount',
+              prefixText: '₱ ',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Monthly'),
+            value: _isMonthly,
+            onChanged: (value) => setState(() => _isMonthly = value),
+          ),
+          TextField(
+            key: const ValueKey('recurring-day'),
+            controller: _dayController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Due day',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        key: const ValueKey('recurring-save'),
+        onPressed: _submit,
+        child: const Text('Save'),
+      ),
+    ],
+  );
+}
+
+// ---------- 19. Personal Ledger ----------
+class PersonalLedger extends StatelessWidget {
+  const PersonalLedger({super.key});
+
+  @override
+  Widget build(BuildContext context) => AppPage(
+    'Personal Ledger',
+    Column(
+      children: [
+        Box(
+          color: deep,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your Balance',
+                style: TextStyle(color: Colors.white70),
+              ),
+              const Text(
+                '₱710.00',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _ledgerBalance(
+                      'Owed to you',
+                      '₱1,950',
+                      const Color(0xFF74E4A7),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _ledgerBalance(
+                      'You owe',
+                      '₱1,240',
+                      const Color(0xFFFFF3D6),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        for (final row in const [
+          ('Owes you', 'Ana', '+₱350', green),
+          ('Owes you', 'Jun', '+₱220', green),
+          ('You owe', 'Leo', '-₱430', orange),
+          ('You owe', 'Mia', '-₱180', orange),
+        ])
+          Box(
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                backgroundColor: mint,
+                child: Text(
+                  row.$2.substring(0, 1),
+                  style: const TextStyle(
+                    color: green,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              title: Text(row.$2),
+              subtitle: Text(row.$1),
+              trailing: Text(
+                row.$3,
+                style: TextStyle(color: row.$4, fontWeight: FontWeight.w900),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+
+  Widget _ledgerBalance(String label, String amount, Color color) => Container(
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 11)),
+        Text(amount, style: const TextStyle(fontWeight: FontWeight.w900)),
+      ],
+    ),
+  );
+}
+
+// ---------- 20. Activity History ----------
+class ActivityHistory extends StatefulWidget {
+  const ActivityHistory({super.key});
+
+  @override
+  State<ActivityHistory> createState() => _ActivityHistoryState();
+}
+
+class _ActivityHistoryState extends State<ActivityHistory> {
+  String _filter = 'All';
+
+  @override
+  Widget build(BuildContext context) {
+    const activities = [
+      (
+        'Activity',
+        'Ana paid',
+        'Payment received · 10:35 AM',
+        Icons.check_circle,
+      ),
+      (
+        'Payments',
+        'You paid ₱320 to Mia',
+        'Payment recorded · 9:41 AM',
+        Icons.account_balance_wallet_outlined,
+      ),
+      (
+        'Reminders',
+        'Reminder sent to Leo',
+        'Due tomorrow · Yesterday',
+        Icons.notifications_outlined,
+      ),
+      (
+        'Reminders',
+        'You sent reminder to Jun',
+        'Friendly reminder · Yesterday',
+        Icons.send_outlined,
+      ),
+      (
+        'Activity',
+        'Electricity Bill was added',
+        'Boarding · Oct 12',
+        Icons.bolt_outlined,
+      ),
+    ];
+    final filtered = _filter == 'All'
+        ? activities
+        : activities.where((activity) => activity.$1 == _filter).toList();
+
+    return AppPage(
+      'Activity',
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final filter in [
+                  'All',
+                  'Payments',
+                  'Reminders',
+                  'Activity',
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(filter),
+                      selected: _filter == filter,
+                      onSelected: (_) => setState(() => _filter = filter),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final activity in filtered)
+            Box(
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: mint,
+                  child: Icon(activity.$4, color: green, size: 20),
+                ),
+                title: Text(
+                  activity.$2,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: Text(activity.$3),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------- 22. Invite ----------
+class InviteMembers extends StatelessWidget {
+  const InviteMembers({super.key});
+
+  @override
+  Widget build(BuildContext context) => AppPage(
+    'Invite',
+    Column(
+      children: [
+        const Text(
+          'Dinner at Jaro',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Add friends or share an invite link',
+          style: TextStyle(color: Colors.black54),
+        ),
+        const SizedBox(height: 18),
+        Container(
+          width: 190,
+          height: 190,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFE0E7E3)),
+          ),
+          child: const Icon(Icons.qr_code_2, size: 150, color: deep),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'bahinko.app/join/dinner-jaro',
+          style: TextStyle(fontSize: 12, color: Colors.black54),
+        ),
+        const SizedBox(height: 16),
+        Btn('Copy invite link', () async {
+          await Clipboard.setData(
+            const ClipboardData(text: 'https://bahinko.app/join/dinner-jaro'),
+          );
+          if (context.mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Invite link copied')));
+          }
+        }),
+        const SizedBox(height: 8),
+        Btn('Share via Messenger', () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invite ready to share')),
+          );
+        }, outlined: true),
+      ],
+    ),
+  );
 }
 
 // ---------- 8. Statistics ----------
@@ -1923,6 +2930,54 @@ class Statistics extends StatelessWidget {
                   child: _stat('Paid out', '₱3,150', green, Icons.arrow_upward),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            Box(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Spending by category',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 10),
+                  for (final category in const [
+                    ('Dining', 48, green),
+                    ('Other', 30, deep),
+                    ('Shopping', 22, orange),
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 72,
+                            child: Text(
+                              category.$1,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          Expanded(
+                            child: LinearProgressIndicator(
+                              value: category.$2 / 100,
+                              minHeight: 8,
+                              borderRadius: BorderRadius.circular(8),
+                              color: category.$3,
+                              backgroundColor: mint,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('${category.$2}%'),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Btn(
+              'Open Personal Ledger',
+              () => go(context, const PersonalLedger()),
+              outlined: true,
             ),
           ],
         ),
@@ -2022,7 +3077,7 @@ class Members extends StatelessWidget {
                 style: TextStyle(fontSize: 12),
               ),
               const SizedBox(height: 8),
-              Btn('Copy invite link', () {}),
+              Btn('Copy invite link', () => go(context, const InviteMembers())),
             ],
           ),
         ),
