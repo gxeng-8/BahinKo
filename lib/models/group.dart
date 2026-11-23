@@ -5,7 +5,10 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'package:bahinko/models/expense.dart';
 import 'package:bahinko/models/person.dart';
+
+export 'package:bahinko/models/expense.dart';
 
 /// What kind of group this is (Trip, Boarding, Dinner…). Used by the Home
 /// category grid, the Create Group dropdown, and the group's icon.
@@ -39,18 +42,59 @@ GroupCategory categoryNamed(String name) => groupCategories.firstWhere(
 
 /// One expense inside a group (e.g. "Samgyup House ₱2,500").
 /// Stored in Firestore at groups/{groupId}/expenses/{expenseId}.
+///
+/// To create one, use [GroupExpense.create] (it fills in the counts) and
+/// pass it to GroupService.addExpense().
 class GroupExpense {
   const GroupExpense({
+    this.id = '',
     required this.title,
     required this.paidBy,
     required this.splitWays,
     required this.amountCents,
     required this.unpaidCount,
     this.icon = Icons.receipt_long_outlined,
+    this.category = 'Bills',
+    this.paidById = '',
+    this.items = const [],
+    this.shares = const {},
+    this.source = 'manual',
+    this.createdAt,
   });
 
+  /// Builds a new expense and works out [splitWays] and [unpaidCount]
+  /// from [shares] (everyone with a share except the payer still owes).
+  factory GroupExpense.create({
+    required String title,
+    required String paidById,
+    required String paidByName,
+    required int amountCents,
+    required Map<String, int> shares,
+    List<ExpenseItem> items = const [],
+    String category = 'Bills',
+    String source = 'manual',
+  }) => GroupExpense(
+    title: title.trim(),
+    paidBy: paidByName,
+    paidById: paidById,
+    amountCents: amountCents,
+    shares: shares,
+    items: items,
+    category: category,
+    icon: categoryNamed(category).icon,
+    source: source,
+    splitWays: shares.length,
+    unpaidCount: shares.entries
+        .where((s) => s.key != paidById && s.value > 0)
+        .length,
+  );
+
+  final String id;
   final String title;
+
+  /// Name of the person who paid the bill (shown as "Paid by Mia").
   final String paidBy;
+  final String paidById;
   final int splitWays;
 
   /// Money is always stored as whole centavos to avoid rounding errors.
@@ -59,15 +103,63 @@ class GroupExpense {
   /// How many members still owe money for this expense (0 = all settled).
   final int unpaidCount;
   final IconData icon;
+  final String category;
+
+  /// The receipt lines (empty for a quick "₱500 for groceries" expense).
+  final List<ExpenseItem> items;
+
+  /// What each member owes for this expense: memberId → centavos.
+  /// Must add up to [amountCents] (the service checks this).
+  final Map<String, int> shares;
+
+  /// 'ai' if it came from the receipt scanner, otherwise 'manual'.
+  final String source;
+  final DateTime? createdAt;
+
+  bool get fromAi => source == 'ai';
+
+  Map<String, dynamic> toMap() => {
+    'title': title,
+    'paidBy': paidBy,
+    'paidById': paidById,
+    'splitWays': splitWays,
+    'amountCents': amountCents,
+    'unpaidCount': unpaidCount,
+    'category': category,
+    'items': [for (final i in items) i.toMap()],
+    'shares': shares,
+    'source': source,
+  };
 
   /// Builds an expense from a Firestore map (safe defaults for gaps).
-  factory GroupExpense.fromMap(Map<String, dynamic> map) => GroupExpense(
-    title: map['title'] as String? ?? 'Expense',
-    paidBy: map['paidBy'] as String? ?? '',
-    splitWays: (map['splitWays'] as num?)?.toInt() ?? 1,
-    amountCents: (map['amountCents'] as num?)?.toInt() ?? 0,
-    unpaidCount: (map['unpaidCount'] as num?)?.toInt() ?? 0,
-  );
+  factory GroupExpense.fromMap(
+    Map<String, dynamic> map, {
+    String id = '',
+    DateTime? createdAt,
+  }) {
+    final category = map['category'] as String? ?? 'Bills';
+    return GroupExpense(
+      id: id,
+      title: map['title'] as String? ?? 'Expense',
+      paidBy: map['paidBy'] as String? ?? '',
+      paidById: map['paidById'] as String? ?? '',
+      splitWays: (map['splitWays'] as num?)?.toInt() ?? 1,
+      amountCents: (map['amountCents'] as num?)?.toInt() ?? 0,
+      unpaidCount: (map['unpaidCount'] as num?)?.toInt() ?? 0,
+      category: category,
+      icon: categoryNamed(category).icon,
+      items: [
+        for (final i in map['items'] as List? ?? const [])
+          ExpenseItem.fromMap(Map<String, dynamic>.from(i as Map)),
+      ],
+      shares: {
+        for (final e in (map['shares'] as Map? ?? const {}).entries)
+          e.key as String: (e.value as num).toInt(),
+      },
+      source: map['source'] as String? ?? 'manual',
+      createdAt: createdAt,
+    );
+  }
 }
 
 /// A group of people who split bills together ("Dinner at Jaro").

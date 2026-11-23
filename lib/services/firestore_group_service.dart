@@ -19,6 +19,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:bahinko/models/group.dart';
 import 'package:bahinko/models/person.dart';
+import 'package:bahinko/models/recurring_bill.dart';
 import 'package:bahinko/services/auth_service.dart';
 import 'package:bahinko/services/group_service.dart';
 
@@ -83,7 +84,14 @@ class FirestoreGroupService implements GroupService {
       .orderBy('createdAt', descending: true)
       .snapshots()
       .map(
-        (snap) => [for (final d in snap.docs) GroupExpense.fromMap(d.data())],
+        (snap) => [
+          for (final d in snap.docs)
+            GroupExpense.fromMap(
+              d.data(),
+              id: d.id,
+              createdAt: (d.data()['createdAt'] as Timestamp?)?.toDate(),
+            ),
+        ],
       )
       .transform(_friendlyErrors());
 
@@ -193,6 +201,18 @@ class FirestoreGroupService implements GroupService {
           'lastJoinCode': code,
         }),
       );
+      // Now a member, so we may write to the activity feed.
+      await _waitForServer(
+        _sub(groupId, 'activity').add(
+          _activity(
+            ActivityEvent(
+              type: 'join',
+              actorName: yourName,
+              text: '$yourName joined the group',
+            ),
+          ),
+        ),
+      );
       return groupId;
     } on TimeoutException {
       throw const GroupFailure(
@@ -218,6 +238,229 @@ class FirestoreGroupService implements GroupService {
       });
     } catch (_) {
       // Not critical: it will be retried the next time Invite is opened.
+    }
+  }
+
+  @override
+  String get myId => _uid;
+
+  /// My name for activity entries ("Renz paid ₱350").
+  String get _myName => AuthService.instance.displayName ?? 'Someone';
+
+  CollectionReference<Map<String, dynamic>> _sub(String groupId, String name) =>
+      _groups.doc(groupId).collection(name);
+
+  /// A new activity entry, ready to add to a batch.
+  Map<String, dynamic> _activity(ActivityEvent e) => {
+    ...e.toMap(),
+    'createdAt': FieldValue.serverTimestamp(),
+  };
+
+  // ---------- Expenses ----------
+
+  @override
+  Stream<GroupExpense> watchExpense(String groupId, String expenseId) =>
+      _sub(groupId, 'expenses')
+          .doc(expenseId)
+          .snapshots()
+          .map((doc) {
+            if (!doc.exists) {
+              throw const GroupFailure('This expense was deleted.');
+            }
+            return GroupExpense.fromMap(
+              doc.data()!,
+              id: doc.id,
+              createdAt: (doc.data()!['createdAt'] as Timestamp?)?.toDate(),
+            );
+          })
+          .transform(_friendlyErrors());
+
+  @override
+  Future<String> addExpense(String groupId, GroupExpense expense) async {
+    checkExpense(expense); // throws GroupFailure if invalid
+    final doc = _sub(groupId, 'expenses').doc();
+    // One batch: the expense, the group's totals, and the activity entry
+    // are saved together, so they can never disagree.
+    final batch = _db.batch()
+      ..set(doc, {
+        ...expense.toMap(),
+        'createdBy': _uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      })
+      ..update(_groups.doc(groupId), {
+        // increment() adds on the server, so two people adding expenses at
+        // the same moment can't overwrite each other's totals.
+        'totalCents': FieldValue.increment(expense.amountCents),
+        'expenseCount': FieldValue.increment(1),
+        'unpaidCount': FieldValue.increment(expense.unpaidCount),
+      })
+      ..set(
+        _sub(groupId, 'activity').doc(),
+        _activity(
+          ActivityEvent(
+            type: 'expense',
+            actorName: _myName,
+            text: '$_myName added ${expense.title}',
+            amountCents: expense.amountCents,
+          ),
+        ),
+      );
+    await _commit(batch);
+    return doc.id;
+  }
+
+  // ---------- Payments ----------
+
+  @override
+  Stream<List<Payment>> watchPayments(String groupId) =>
+      _sub(groupId, 'payments')
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .map(
+            (snap) => [
+              for (final d in snap.docs)
+                Payment.fromMap(
+                  d.id,
+                  d.data(),
+                  createdAt: (d.data()['createdAt'] as Timestamp?)?.toDate(),
+                ),
+            ],
+          )
+          .transform(_friendlyErrors());
+
+  @override
+  Future<void> recordPayment(String groupId, Payment payment) async {
+    checkPayment(payment);
+    final batch = _db.batch()
+      ..set(_sub(groupId, 'payments').doc(), {
+        ...payment.toMap(),
+        'createdBy': _uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      })
+      ..set(
+        _sub(groupId, 'activity').doc(),
+        _activity(
+          ActivityEvent(
+            type: 'payment',
+            actorName: payment.fromName,
+            text: '${payment.fromName} paid ${payment.toName}',
+            amountCents: payment.amountCents,
+          ),
+        ),
+      );
+    await _commit(batch);
+  }
+
+  @override
+  Future<void> confirmPayment(
+    String groupId,
+    Payment payment, {
+    bool fullShare = true,
+  }) async {
+    final batch = _db.batch()
+      ..update(_sub(groupId, 'payments').doc(payment.id), {
+        'status': 'confirmed',
+      })
+      ..set(
+        _sub(groupId, 'activity').doc(),
+        _activity(
+          ActivityEvent(
+            type: 'confirm',
+            actorName: payment.toName,
+            text: "${payment.toName} confirmed ${payment.fromName}'s payment",
+            amountCents: payment.amountCents,
+          ),
+        ),
+      );
+    // Paid their whole share of an expense → one fewer unpaid member.
+    if (fullShare && payment.expenseId != null) {
+      batch
+        ..update(_sub(groupId, 'expenses').doc(payment.expenseId), {
+          'unpaidCount': FieldValue.increment(-1),
+        })
+        ..update(_groups.doc(groupId), {
+          'unpaidCount': FieldValue.increment(-1),
+        });
+    }
+    await _commit(batch);
+  }
+
+  // ---------- Activity ----------
+
+  @override
+  Stream<List<ActivityEvent>> watchActivity(String groupId) =>
+      _sub(groupId, 'activity')
+          .orderBy('createdAt', descending: true)
+          .limit(100) // the feed only needs recent events
+          .snapshots()
+          .map(
+            (snap) => [
+              for (final d in snap.docs)
+                ActivityEvent.fromMap(
+                  d.id,
+                  d.data(),
+                  createdAt: (d.data()['createdAt'] as Timestamp?)?.toDate(),
+                ),
+            ],
+          )
+          .transform(_friendlyErrors());
+
+  @override
+  Future<void> logActivity(String groupId, ActivityEvent event) async {
+    try {
+      await _waitForServer(_sub(groupId, 'activity').add(_activity(event)));
+    } on FirebaseException catch (e) {
+      throw _toFailure(e);
+    }
+  }
+
+  // ---------- Recurring bills ----------
+
+  @override
+  Stream<List<RecurringBill>> watchRecurring(String groupId) =>
+      _sub(groupId, 'recurring')
+          .orderBy('dayOfMonth')
+          .snapshots()
+          .map(
+            (snap) => [
+              for (final d in snap.docs) RecurringBill.fromMap(d.id, d.data()),
+            ],
+          )
+          .transform(_friendlyErrors());
+
+  @override
+  Future<void> addRecurring(String groupId, RecurringBill bill) async {
+    if (bill.name.trim().isEmpty) {
+      throw const GroupFailure('Give the bill a name.');
+    }
+    try {
+      await _waitForServer(_sub(groupId, 'recurring').add(bill.toMap()));
+    } on FirebaseException catch (e) {
+      throw _toFailure(e);
+    }
+  }
+
+  @override
+  Future<void> setRecurringEnabled(
+    String groupId,
+    String billId,
+    bool enabled,
+  ) async {
+    try {
+      await _waitForServer(
+        _sub(groupId, 'recurring').doc(billId).update({'enabled': enabled}),
+      );
+    } on FirebaseException catch (e) {
+      throw _toFailure(e);
+    }
+  }
+
+  /// Commits a batch; Firestore errors become [GroupFailure]s.
+  Future<void> _commit(WriteBatch batch) async {
+    try {
+      await _waitForServer(batch.commit());
+    } on FirebaseException catch (e) {
+      throw _toFailure(e);
     }
   }
 

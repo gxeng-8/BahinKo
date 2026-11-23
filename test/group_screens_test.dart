@@ -207,7 +207,7 @@ void main() {
 }
 
 /// A service whose every stream fails, like a phone with no internet.
-class _OfflineService implements GroupService {
+class _OfflineService extends InMemoryGroupService {
   Stream<T> _fail<T>() =>
       Stream.error(const GroupFailure("Can't reach the server."));
 

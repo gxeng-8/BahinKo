@@ -11,11 +11,18 @@ import 'package:bahinko/theme/app_colors.dart';
 // ---------- People ----------
 
 const people = [
-  Person('Mia', 'MI', green, 'Paid the bill', 'Paid'),
-  Person('Jun', 'JU', orange, 'GCash', 'Owes ₱220'),
-  Person('Ana', 'AN', purple, 'Maya', 'Paid'),
-  Person('Leo', 'LE', deep, 'Cash', 'Owes ₱430'),
-  Person('You', 'YO', Color(0xFF5ED38A), 'GCash', 'Owes ₱490'),
+  Person('Mia', 'MI', green, 'Paid the bill', 'Paid', id: 'mia'),
+  Person('Jun', 'JU', orange, 'GCash', 'Owes ₱220', id: 'jun'),
+  Person('Ana', 'AN', purple, 'Maya', 'Paid', id: 'ana'),
+  Person('Leo', 'LE', deep, 'Cash', 'Owes ₱430', id: 'leo'),
+  Person(
+    'You',
+    'YO',
+    Color(0xFF5ED38A),
+    'GCash',
+    'Owes ₱490',
+    id: 'me', // same as InMemoryGroupService.myUid
+  ),
 ];
 
 /// The current user in the sample data.

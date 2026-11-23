@@ -15,6 +15,7 @@ import 'dart:math';
 import 'package:bahinko/data/in_memory_group_service.dart';
 import 'package:bahinko/models/group.dart';
 import 'package:bahinko/models/person.dart';
+import 'package:bahinko/models/recurring_bill.dart';
 
 abstract class GroupService {
   /// The service the whole app uses. main() replaces it with Firestore.
@@ -46,7 +47,93 @@ abstract class GroupService {
   /// Makes sure the group's invite code can be looked up (for groups
   /// created before invite codes were published). Safe to call often.
   Future<void> ensureInvite(Group group);
+
+  /// The current user's member ID: compare with Person.id / Payment.toId
+  /// to show "You", and use it as the payer/receiver of your own payments.
+  String get myId;
+
+  // ---------- Expenses (M2 scanner, M3 Add Expense / Split Summary) ----------
+
+  /// One expense, live (e.g. for Split Summary).
+  Stream<GroupExpense> watchExpense(String groupId, String expenseId);
+
+  /// Saves a new expense, adds it to the group's totals, and logs it in the
+  /// activity feed. Build it with [GroupExpense.create]. Throws a
+  /// [GroupFailure] if it's invalid (see [checkExpense]). Returns its ID.
+  Future<String> addExpense(String groupId, GroupExpense expense);
+
+  // ---------- Payments (M4 Settle Up) ----------
+
+  /// All payments in the group, newest first.
+  Stream<List<Payment>> watchPayments(String groupId);
+
+  /// Saves a payment ("Yes, I paid" / "Paid in cash") and logs it.
+  /// Status 'pending' = waiting for the receiver to confirm.
+  /// A receiver recording cash they got may save it as 'confirmed'.
+  Future<void> recordPayment(String groupId, Payment payment);
+
+  /// The receiver confirms they got the money. If [fullShare] is true and
+  /// the payment is for an expense, that member no longer counts as unpaid.
+  Future<void> confirmPayment(
+    String groupId,
+    Payment payment, {
+    bool fullShare = true,
+  });
+
+  // ---------- Activity feed (M5 Activity History) ----------
+
+  /// The group's activity, newest first.
+  Stream<List<ActivityEvent>> watchActivity(String groupId);
+
+  /// Adds an event the service doesn't log by itself: reminders sent,
+  /// items flagged, prices edited.
+  Future<void> logActivity(String groupId, ActivityEvent event);
+
+  // ---------- Recurring bills (M5 Frames 16–17) ----------
+
+  Stream<List<RecurringBill>> watchRecurring(String groupId);
+  Future<void> addRecurring(String groupId, RecurringBill bill);
+  Future<void> setRecurringEnabled(String groupId, String billId, bool enabled);
 }
+
+/// Checks an expense before saving. Throws [GroupFailure] with a message
+/// the screen can show. (Screens should also validate their forms; this
+/// is the last safety net so bad data never reaches the database.)
+void checkExpense(GroupExpense e) {
+  if (e.title.trim().isEmpty) {
+    throw const GroupFailure('Give the expense a name.');
+  }
+  if (e.amountCents <= 0) {
+    throw const GroupFailure('The amount must be more than ₱0.');
+  }
+  if (e.paidById.isEmpty) throw const GroupFailure('Choose who paid.');
+  if (e.shares.isEmpty) {
+    throw const GroupFailure('Choose who shares this expense.');
+  }
+  if (e.shares.values.any((s) => s < 0)) {
+    throw const GroupFailure('Shares cannot be negative.');
+  }
+  final sum = e.shares.values.fold(0, (a, b) => a + b);
+  if (sum != e.amountCents) {
+    throw GroupFailure(
+      "Shares add up to ${_peso(sum)}, but the total is "
+      "${_peso(e.amountCents)}.",
+    );
+  }
+}
+
+/// Checks a payment before saving.
+void checkPayment(Payment p) {
+  if (p.amountCents <= 0) {
+    throw const GroupFailure('The amount must be more than ₱0.');
+  }
+  if (p.fromId.isEmpty || p.toId.isEmpty || p.fromId == p.toId) {
+    throw const GroupFailure('Choose who paid and who received it.');
+  }
+}
+
+String _peso(int cents) =>
+    '₱${cents ~/ 100}.${(cents % 100).toString().padLeft(2, '0')}';
 
 /// Error with a message that's safe to show the user.
 class GroupFailure implements Exception {

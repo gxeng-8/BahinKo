@@ -69,11 +69,65 @@ service cloud.firestore {
       // Delete: only the person who created the group.
       allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
 
-      // Expenses inherit access from their group.
+      // ----- Sub-collections: access comes from the parent group -----
+
+      function group() {
+        return get(/databases/$(database)/documents/groups/$(groupId)).data;
+      }
+
+      function isGroupMember() {
+        return isMemberOf(group());
+      }
+
+      // Expenses: members only, with basic checks on the data.
       match /expenses/{expenseId} {
-        allow read, write: if isMemberOf(
-          get(/databases/$(database)/documents/groups/$(groupId)).data
-        );
+        allow read: if isGroupMember();
+        allow create, update: if isGroupMember()
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 60
+          && request.resource.data.amountCents is int
+          && request.resource.data.amountCents > 0
+          && request.resource.data.shares is map;
+        allow delete: if isGroupMember();
+      }
+
+      // Payments: any member can record one (e.g. "Yes, I paid").
+      // Only the RECEIVER may mark it confirmed, unless the receiver is a
+      // guest without the app (then any member can confirm for them).
+      match /payments/{paymentId} {
+        allow read: if isGroupMember();
+        allow create: if isGroupMember()
+          && request.resource.data.amountCents is int
+          && request.resource.data.amountCents > 0
+          && request.resource.data.fromId != request.resource.data.toId
+          && (request.resource.data.status == 'pending'
+              || (request.resource.data.status == 'confirmed'
+                  && (request.resource.data.toId == request.auth.uid
+                      || !(request.resource.data.toId in group().memberIds))));
+        allow update: if isGroupMember()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status'])
+          && request.resource.data.status == 'confirmed'
+          && (resource.data.toId == request.auth.uid
+              || !(resource.data.toId in group().memberIds));
+        allow delete: if isGroupMember()
+          && resource.data.createdBy == request.auth.uid
+          && resource.data.status == 'pending';
+      }
+
+      // Activity feed: members can add entries but never edit or delete
+      // them, so the history stays honest.
+      match /activity/{eventId} {
+        allow read: if isGroupMember();
+        allow create: if isGroupMember()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 200;
+      }
+
+      // Recurring bills: members only.
+      match /recurring/{billId} {
+        allow read, write: if isGroupMember();
       }
     }
 
