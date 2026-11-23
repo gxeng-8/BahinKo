@@ -7,7 +7,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:bahinko/main.dart';
+import 'package:bahinko/app.dart';
 
 void main() {
   testWidgets('App starts with onboarding', (WidgetTester tester) async {
