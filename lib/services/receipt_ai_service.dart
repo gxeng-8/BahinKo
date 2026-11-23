@@ -38,6 +38,7 @@ class AiReceipt {
     required this.items,
     this.serviceChargeCents = 0,
     this.vatCents = 0,
+    this.discountCents = 0,
     this.totalCents,
   });
 
@@ -45,6 +46,9 @@ class AiReceipt {
   final List<AiReceiptItem> items;
   final int serviceChargeCents;
   final int vatCents;
+
+  /// Discounts on the receipt (senior/PWD/promo), as a positive amount.
+  final int discountCents;
 
   /// The TOTAL printed on the receipt, if the AI found one.
   final int? totalCents;
@@ -60,7 +64,8 @@ abstract class ReceiptAi {
 /// The real thing: Gemini through Firebase AI Logic.
 class GeminiReceiptAi implements ReceiptAi {
   /// A fast, low-cost model; reading receipts doesn't need a big one.
-  static const modelName = 'gemini-2.5-flash';
+  /// (Checked Nov 2026: older 2.5 models are closed to new projects.)
+  static const modelName = 'gemini-3.5-flash-lite';
 
   // Created lazily so tests never touch Firebase.
   late final GenerativeModel _model = FirebaseAI.googleAI().generativeModel(
@@ -86,15 +91,22 @@ Extract:
 - items: every purchased line item, with the LINE TOTAL in pesos
   (for "Rice x5 @ 50.00  250.00" the price is 250.00). Fix obvious OCR
   typos in names ("P0RK" → "Pork"). Merge an item split across two lines.
-- serviceCharge and vat: amounts if printed, else 0. Do NOT also list them
-  as items.
+- serviceCharge: amount if printed, else 0. Do NOT also list it as an item.
+- vat: in the Philippines item prices usually ALREADY INCLUDE VAT, and the
+  receipt only shows "VATable sales" / "VAT amount" for information. Set vat
+  ONLY if it is ADDED ON TOP (items + service charge + VAT = total).
+  Otherwise vat is 0. Never list VAT as an item.
+- discount: the total of discount lines (senior, PWD, promo) as a POSITIVE
+  number, else 0. Do NOT list discounts as items.
 - total: the final TOTAL / AMOUNT DUE printed on the receipt, or null.
-- confidence for each item: 1.0 if clearly readable, lower if you had to
-  guess the name or the price.
+- confidence for each item: 1.0 if name and price are clearly readable.
+  If you had to guess ANY digit of the price (e.g. "1?5", "15S"), the
+  confidence MUST be below 0.6. If only the name was unclear, use 0.6-0.8.
 
-Ignore: subtotal, cash tendered, change, discounts lines, table numbers,
+Ignore: subtotal, cash tendered, change, table numbers, item codes,
 addresses, TIN/VAT registration numbers, dates, and thank-you messages.
-Never invent items that aren't in the text.
+Never invent items that aren't in the text. If the text is not a receipt,
+return an empty items list.
 ''';
 
   /// The JSON shape Gemini must return.
@@ -112,6 +124,7 @@ Never invent items that aren't in the text.
       ),
       'serviceCharge': Schema.number(),
       'vat': Schema.number(),
+      'discount': Schema.number(),
       'total': Schema.number(nullable: true),
     },
     optionalProperties: ['total'],
@@ -155,6 +168,7 @@ AiReceipt parseAiReceiptJson(String json) {
     ],
     serviceChargeCents: cents(data['serviceCharge']),
     vatCents: cents(data['vat']),
+    discountCents: cents(data['discount']).abs(),
     totalCents: data['total'] is num ? cents(data['total']) : null,
   );
 }

@@ -43,6 +43,15 @@ class FakeAi implements ReceiptAi {
   }
 }
 
+/// An AI whose answer comes from a callback (to simulate flaky service).
+class _FlakyAi implements ReceiptAi {
+  _FlakyAi(this.next);
+  final AiReceipt Function() next;
+
+  @override
+  Future<AiReceipt> extract(String receiptText) async => next();
+}
+
 const goodAnswer = AiReceipt(
   storeName: 'Samgyup House',
   items: [
@@ -112,6 +121,16 @@ void main() {
       expect(reviewAiReceipt(wrong)!.warning, contains('receipt says'));
     });
 
+    test('explains a discount instead of a confusing total mismatch', () {
+      const withDiscount = AiReceipt(
+        storeName: 'Jolly Burger',
+        items: [AiReceiptItem('Chickenjoy', 17000, 1)],
+        discountCents: 1300,
+        totalCents: 15700,
+      );
+      expect(reviewAiReceipt(withDiscount)!.warning, contains('discount'));
+    });
+
     test('returns null (unusable) when nothing or mostly no prices', () {
       expect(
         reviewAiReceipt(const AiReceipt(storeName: 'x', items: [])),
@@ -145,6 +164,18 @@ void main() {
       expect(r.source, ScanSource.basic);
       expect(r.items.map((i) => i.name), contains('PORK BELLY SET'));
       expect(r.warning, contains('unavailable'));
+    });
+
+    test('retries once when the AI fails fast (e.g. "model busy")', () async {
+      var calls = 0;
+      final flaky = _FlakyAi(() {
+        calls++;
+        if (calls == 1) throw Exception('high demand');
+        return goodAnswer;
+      });
+      final r = await ReceiptScanner(customAi: flaky).analyzeText(ocrText);
+      expect(r.source, ScanSource.ai);
+      expect(calls, 2);
     });
 
     test('falls back when the AI takes too long (timeout)', () async {

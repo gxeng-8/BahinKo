@@ -15,7 +15,7 @@ BahinKo is a Flutter app for groups (barkadas, dormmates, boarding houses) who s
 | Sign in (anonymous, no email/password), your name, 4-digit app lock with fingerprint | ✅ |
 | Create groups from templates, invite by **QR code / link / code**, add guests without the app | ✅ |
 | Live group data shared between phones (Firebase), with loading / empty / error states | ✅ |
-| **AI receipt scanner** (on-device text recognition + AI item extraction, with fallback) | 🚧 M2 |
+| **AI receipt scanner**: on-device OCR + Gemini item extraction, "Needs review" flags, editable items, fallbacks ([spec](docs/AI_FEATURE_SPEC.md)) | ✅ |
 | Add expense with split modes, split summary, PDF/CSV report | 🚧 M3 |
 | Settle up: GCash/Maya hand-off, payment proof, reminders, smart settle | 🚧 M4 |
 | Recurring bills, activity history, personal ledger, statistics | 🚧 M5 |
@@ -30,6 +30,7 @@ BahinKo is a Flutter app for groups (barkadas, dormmates, boarding houses) who s
 | Dart | 3.13.7 |
 | Firebase: `firebase_core` / `firebase_auth` / `cloud_firestore` | 5.2.0 / 7.1.0 / 7.2.0 |
 | Camera + on-device OCR: `camera` / `google_mlkit_text_recognition` | 0.12.2 / 0.15.1 |
+| AI: `firebase_ai` (Gemini 3.5 Flash-Lite) / `firebase_app_check` | 5.2.0 / 0.5.2 |
 | QR: `mobile_scanner` / `qr_flutter` | 7.5.0 / 4.1.0 |
 | Security: `flutter_secure_storage` / `local_auth` / `crypto` | 11.2.0 / 3.0.2 / 3.0.8 |
 | Storage & sharing: `shared_preferences` / `share_plus` | 2.5.6 / 13.3.1 |
@@ -55,9 +56,10 @@ flutter pub get
 ### 3. Add the Firebase config (not in git)
 For security, Firebase config files are **not committed** (see `.gitignore`). Do one of these:
 
-- **Option A (teammates):** ask the team lead for these two files and put them here:
+- **Option A (teammates):** ask the team lead for these three files and put them here:
   - `lib/firebase_options.dart`
   - `android/app/google-services.json`
+  - `lib/secrets.dart`: the App Check token that lets your phone use the AI scanner
 - **Option B:** if you've been added to the Firebase project:
   ```bash
   npm install -g firebase-tools
@@ -66,7 +68,7 @@ For security, Firebase config files are **not committed** (see `.gitignore`). Do
   flutterfire configure --project=bahinko-303f2 --platforms=android,web --android-package-name=com.bahinko.app
   ```
 
-Without these files the app won't compile (`firebase_options.dart` missing).
+Without these files the app won't compile. With Option B, also ask the lead for `lib/secrets.dart`.
 
 ### 4. Run
 ```bash
@@ -120,7 +122,8 @@ Screens never call Firebase directly. They use services (`GroupService.instance`
   firebase deploy --only firestore:rules --project bahinko-303f2
   ```
 - **App lock:** the PIN is stored only as a salted SHA-256 hash in encrypted device storage. 5 wrong tries pause the keypad for 30 seconds, and the pause survives restarts.
-- **No secrets in git:** Firebase config files and keystores are in `.gitignore`.
+- **AI:** only receipt text is sent (never the photo), with card/phone numbers and emails masked. App Check is enforced, so only the real app can use the AI. See [`docs/AI_FEATURE_SPEC.md`](docs/AI_FEATURE_SPEC.md).
+- **No secrets in git:** Firebase config files, `lib/secrets.dart` and keystores are in `.gitignore`.
 
 ---
 
@@ -129,6 +132,7 @@ Screens never call Firebase directly. They use services (`GroupService.instance`
 - [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md): scope, timeline, roles
 - [`docs/BUILD_GUIDE.md`](docs/BUILD_GUIDE.md): Figma frames → screens, per member
 - [`docs/TEAM_INTEGRATION.md`](docs/TEAM_INTEGRATION.md): connecting screens to the backend
+- [`docs/AI_FEATURE_SPEC.md`](docs/AI_FEATURE_SPEC.md): the AI feature (model, prompt, sample outputs, failures, privacy)
 
 ## Team
 

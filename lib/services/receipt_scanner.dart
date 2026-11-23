@@ -60,7 +60,7 @@ class ReceiptScanner {
   ReceiptScanner({
     this.customAi,
     Future<String?> Function(String imagePath)? ocr,
-    this.aiTimeout = const Duration(seconds: 10),
+    this.aiTimeout = const Duration(seconds: 15),
   }) : _ocr = ocr ?? recognizeReceiptText;
 
   /// The scanner the app uses. Tests replace it (fake OCR and AI).
@@ -107,13 +107,27 @@ class ReceiptScanner {
     return analyzeText(text);
   }
 
+  /// Calls the AI, retrying once if it fails fast (e.g. Google says the
+  /// model is busy). The caller's timeout still caps the total wait.
+  Future<AiReceipt> _askAi(String text) async {
+    final started = DateTime.now();
+    try {
+      return await ai.extract(text);
+    } catch (_) {
+      final elapsed = DateTime.now().difference(started);
+      if (elapsed > aiTimeout ~/ 2) rethrow; // no time left for a retry
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      return ai.extract(text);
+    }
+  }
+
   /// Steps 2+: AI first, then the basic parser. Public so it can be
   /// tested without a camera.
   Future<ScanResult> analyzeText(String text) async {
     String reason;
     try {
       // Privacy: mask card/phone numbers and emails BEFORE any AI sees it.
-      final answer = await ai.extract(redactForAi(text)).timeout(aiTimeout);
+      final answer = await _askAi(redactForAi(text)).timeout(aiTimeout);
       final checked = reviewAiReceipt(answer);
       if (checked != null) return checked;
       reason = "The AI's answer didn't look right";
@@ -179,7 +193,20 @@ ScanResult? reviewAiReceipt(AiReceipt answer) {
   final review = items.where((i) => i.needsReview).length;
   String? warning;
   // Allow ₱1 or 1% difference for rounding on the receipt.
-  if (total != null && total > 0 && (sum - total).abs() > _tolerance(total)) {
+  final discount = answer.discountCents;
+  final matchesAfterDiscount =
+      discount > 0 &&
+      total != null &&
+      (sum - discount - total).abs() <= _tolerance(total);
+  if (matchesAfterDiscount) {
+    // Senior/PWD discounts usually belong to one person, so we don't split
+    // them equally; the user decides whose item gets cheaper.
+    warning =
+        'This receipt has a ${formatMoney(discount)} discount. Edit the '
+        'item it applies to (e.g. the senior/PWD order).';
+  } else if (total != null &&
+      total > 0 &&
+      (sum - total).abs() > _tolerance(total)) {
     warning =
         'Items add up to ${formatMoney(sum)}, but the receipt says '
         '${formatMoney(total)}. Check the items before splitting.';
