@@ -28,9 +28,8 @@ const people = [
 /// The current user in the sample data.
 final you = people.last;
 
-/// Members of the sample group "Dinner at Jaro".
-// TODO(M3/M4): the receipt and settle screens still read this list.
-// Switch them to GroupService.instance.watchGroup(groupId) instead.
+/// Members of the sample group "Dinner at Jaro" (used by the in-memory
+/// service in tests; the real app reads members from Firestore).
 final ValueNotifier<List<Person>> groupMembers = ValueNotifier(people);
 
 // ---------- Receipt sample ----------

@@ -12,7 +12,10 @@ import 'package:bahinko/screens/bill/manual_receipt_entry_screen.dart';
 import 'package:bahinko/screens/scan/scanning_screen.dart';
 
 class CameraCapture extends StatefulWidget {
-  const CameraCapture({super.key});
+  const CameraCapture({super.key, this.groupId});
+
+  /// The group to save the expense into (null = choose on Assign Items).
+  final String? groupId;
 
   @override
   State<CameraCapture> createState() => _CameraCaptureState();
@@ -145,8 +148,11 @@ class _CameraCaptureState extends State<CameraCapture>
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            ScanningScreen(imagePath: path, imageBytes: _capturedImage),
+        builder: (_) => ScanningScreen(
+          imagePath: path,
+          imageBytes: _capturedImage,
+          groupId: widget.groupId,
+        ),
       ),
     );
   }
@@ -309,7 +315,10 @@ class _CameraCaptureState extends State<CameraCapture>
                   child: FilledButton(
                     onPressed: _processing
                         ? null
-                        : () => go(context, const ManualReceiptEntry()),
+                        : () => go(
+                            context,
+                            ManualReceiptEntry(groupId: widget.groupId),
+                          ),
                     child: const Text('Enter manually'),
                   ),
                 ),

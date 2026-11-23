@@ -172,6 +172,7 @@ class Group {
     required this.members,
     required this.inviteCode,
     this.createdBy = '',
+    this.memberIds = const [],
     this.totalCents = 0,
     this.expenseCount = 0,
     this.unpaidCount = 0,
@@ -199,6 +200,21 @@ class Group {
   /// publish its invite code).
   final String createdBy;
 
+  /// IDs of members who have the app (signed-in accounts). Everyone else
+  /// in [members] is a guest, so any member may confirm payments to them.
+  final List<String> memberIds;
+
+  /// True if [person] has no BahinKo account (added by name).
+  bool isGuest(Person person) => !memberIds.contains(person.id);
+
+  /// The member with this ID, or null.
+  Person? memberById(String id) {
+    for (final m in members) {
+      if (m.id == id) return m;
+    }
+    return null;
+  }
+
   String get inviteLink => 'https://bahinko.app/j/$inviteCode';
 
   /// Returns a copy with a different member list (groups are immutable).
@@ -209,6 +225,7 @@ class Group {
     members: members ?? this.members,
     inviteCode: inviteCode,
     createdBy: createdBy,
+    memberIds: memberIds,
     totalCents: totalCents,
     expenseCount: expenseCount,
     unpaidCount: unpaidCount,

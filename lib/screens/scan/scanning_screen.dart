@@ -22,7 +22,15 @@ import 'package:bahinko/widgets/btn.dart';
 import 'package:bahinko/widgets/info_banner.dart';
 
 class ScanningScreen extends StatefulWidget {
-  const ScanningScreen({super.key, required this.imagePath, this.imageBytes});
+  const ScanningScreen({
+    super.key,
+    required this.imagePath,
+    this.imageBytes,
+    this.groupId,
+  });
+
+  /// The group to save the expense into (null = choose on Assign Items).
+  final String? groupId;
 
   final String imagePath;
 
@@ -69,7 +77,9 @@ class _ScanningScreenState extends State<ScanningScreen>
       // pushReplacement: Back from Assign Items skips this finished screen.
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => AssignItems(scan: result)),
+        MaterialPageRoute(
+          builder: (_) => AssignItems(scan: result, groupId: widget.groupId),
+        ),
       );
     } on ScanFailure catch (e) {
       if (mounted) setState(() => _error = e.message); // error state
@@ -78,12 +88,14 @@ class _ScanningScreenState extends State<ScanningScreen>
 
   void _retake() => Navigator.pushReplacement(
     context,
-    MaterialPageRoute(builder: (_) => const CameraCapture()),
+    MaterialPageRoute(builder: (_) => CameraCapture(groupId: widget.groupId)),
   );
 
   void _enterManually() => Navigator.pushReplacement(
     context,
-    MaterialPageRoute(builder: (_) => const ManualReceiptEntry()),
+    MaterialPageRoute(
+      builder: (_) => ManualReceiptEntry(groupId: widget.groupId),
+    ),
   );
 
   @override

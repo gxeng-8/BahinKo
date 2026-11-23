@@ -11,7 +11,10 @@ import 'package:bahinko/widgets/box.dart';
 import 'package:bahinko/widgets/btn.dart';
 
 class ManualReceiptEntry extends StatefulWidget {
-  const ManualReceiptEntry({super.key});
+  const ManualReceiptEntry({super.key, this.groupId});
+
+  /// The group to save the expense into (null = choose on Assign Items).
+  final String? groupId;
 
   @override
   State<ManualReceiptEntry> createState() => _ManualReceiptEntryState();
@@ -60,6 +63,7 @@ class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
       context,
       AssignItems(
         receiptItems: receiptItems,
+        groupId: widget.groupId,
         storeName: storeName.isEmpty ? 'Manual Receipt' : storeName,
       ),
     );

@@ -23,7 +23,10 @@ bool get canScanReceipts =>
         defaultTargetPlatform == TargetPlatform.iOS);
 
 class ScanReceipt extends StatelessWidget {
-  const ScanReceipt({super.key});
+  const ScanReceipt({super.key, this.groupId});
+
+  /// The group to save the expense into (null = choose on Assign Items).
+  final String? groupId;
 
   @override
   Widget build(BuildContext context) => AppPage(
@@ -53,7 +56,7 @@ class ScanReceipt extends StatelessWidget {
               Btn(
                 'Scan Receipt',
                 canScanReceipts
-                    ? () => go(context, const CameraCapture())
+                    ? () => go(context, CameraCapture(groupId: groupId))
                     : null, // disabled where scanning isn't available
                 icon: Icons.document_scanner_outlined,
               ),
@@ -75,7 +78,7 @@ class ScanReceipt extends StatelessWidget {
         ),
         Btn(
           'Enter Manually',
-          () => go(context, const ManualReceiptEntry()),
+          () => go(context, ManualReceiptEntry(groupId: groupId)),
           outlined: true,
         ),
         const SizedBox(height: 16),

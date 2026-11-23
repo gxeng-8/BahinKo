@@ -23,7 +23,7 @@ import 'package:bahinko/models/recurring_bill.dart';
 import 'package:bahinko/services/auth_service.dart';
 import 'package:bahinko/services/group_service.dart';
 
-class FirestoreGroupService implements GroupService {
+class FirestoreGroupService extends GroupService {
   /// How long to wait for the server.
   static const serverTimeout = Duration(seconds: 10);
 
@@ -147,6 +147,7 @@ class FirestoreGroupService implements GroupService {
           members: members,
           inviteCode: code,
           createdBy: uid,
+          memberIds: [uid],
         );
       } on FirebaseException catch (e) {
         final codeTaken = e.code == 'permission-denied' && attempt < 3;
@@ -292,7 +293,7 @@ class FirestoreGroupService implements GroupService {
         // the same moment can't overwrite each other's totals.
         'totalCents': FieldValue.increment(expense.amountCents),
         'expenseCount': FieldValue.increment(1),
-        'unpaidCount': FieldValue.increment(expense.unpaidCount),
+        // unpaidCount is recalculated from balances (see setUnpaidCount).
       })
       ..set(
         _sub(groupId, 'activity').doc(),
@@ -455,6 +456,15 @@ class FirestoreGroupService implements GroupService {
     }
   }
 
+  @override
+  Future<void> setUnpaidCount(String groupId, int count) async {
+    try {
+      await _waitForServer(_groups.doc(groupId).update({'unpaidCount': count}));
+    } on FirebaseException catch (e) {
+      throw _toFailure(e);
+    }
+  }
+
   /// Commits a batch; Firestore errors become [GroupFailure]s.
   Future<void> _commit(WriteBatch batch) async {
     try {
@@ -490,6 +500,7 @@ class FirestoreGroupService implements GroupService {
       members: members,
       inviteCode: data['inviteCode'] as String? ?? '',
       createdBy: data['createdBy'] as String? ?? '',
+      memberIds: List<String>.from(data['memberIds'] as List? ?? const []),
       totalCents: (data['totalCents'] as num?)?.toInt() ?? 0,
       expenseCount: (data['expenseCount'] as num?)?.toInt() ?? 0,
       unpaidCount: (data['unpaidCount'] as num?)?.toInt() ?? 0,

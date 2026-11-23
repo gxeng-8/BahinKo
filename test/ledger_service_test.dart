@@ -87,7 +87,8 @@ void main() {
     final after = demo();
     expect(after.totalCents, before.totalCents + 60000);
     expect(after.expenseCount, before.expenseCount + 1);
-    expect(after.unpaidCount, before.unpaidCount + 2);
+    // "N unpaid" is recalculated from balances (setUnpaidCount), not here.
+    expect(after.unpaidCount, before.unpaidCount);
 
     final saved = await service.watchExpense(demoGroupId, id).first;
     expect(saved.title, 'Pizza');

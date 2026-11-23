@@ -1,81 +1,100 @@
 import 'dart:async';
 
+import 'package:bahinko/data/in_memory_group_service.dart';
 import 'package:bahinko/data/mock_data.dart';
-import 'package:bahinko/models/receipt_line_item.dart';
+import 'package:bahinko/models/group.dart';
 import 'package:bahinko/screens/bill/manual_receipt_entry_screen.dart';
-import 'package:bahinko/screens/bill/split_summary_screen.dart';
 import 'package:bahinko/screens/group/invite_members_screen.dart';
 import 'package:bahinko/screens/group/members_screen.dart';
 import 'package:bahinko/screens/history/activity_history_screen.dart';
 import 'package:bahinko/screens/history/personal_ledger_screen.dart';
 import 'package:bahinko/screens/recurring/recurring_bills_screen.dart';
 import 'package:bahinko/screens/settle/settle_up_screen.dart';
-import 'package:bahinko/models/person.dart';
+import 'package:bahinko/services/group_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  setUp(() => groupMembers.value = people);
+  setUp(() {
+    groupMembers.value = people;
+    GroupService.instance = InMemoryGroupService(); // fresh sample data
+  });
   tearDown(() => groupMembers.value = people);
 
-  testWidgets('settle up shows every current member and current headcount', (
+  testWidgets('settle up shows smart-settle transfers from real balances', (
     tester,
   ) async {
-    groupMembers.value = [
-      ...people,
-      const Person('Nina', 'NI', Colors.blue, 'Guest', 'Unpaid'),
-    ];
+    await tester.pumpWidget(
+      const MaterialApp(home: SettleUp(groupId: demoGroupId)),
+    );
+    await tester.pump(); // let the ledger stream deliver
 
-    await tester.pumpWidget(const MaterialApp(home: SettleUp()));
-
-    expect(find.text('6 people'), findsOneWidget);
-    expect(find.text('5 payments to Mia'), findsOneWidget);
-    expect(find.text('Jun pays Mia'), findsOneWidget);
-    expect(find.text('Ana pays Mia'), findsOneWidget);
-    expect(find.text('Leo pays Mia'), findsOneWidget);
-    expect(find.text('You pays Mia'), findsOneWidget);
-    expect(find.text('Nina pays Mia'), findsOneWidget);
+    // Sample group: Samgyup (₱2,500, you paid) + Milk Tea (₱450, Mia paid).
+    expect(
+      find.textContaining('Smart settle: 4 transfers instead of 6'),
+      findsOneWidget,
+    );
+    expect(find.text('Pays you'), findsOneWidget);
+    expect(find.text('₱845.00'), findsOneWidget); // Jun: 695 + 150
+    expect(find.text('₱620.00'), findsOneWidget); // Ana
   });
 
-  testWidgets('settle up uses the receipt total and marks payments paid', (
+  testWidgets('"Got cash" records a payment and updates the balances', (
     tester,
   ) async {
-    groupMembers.value = [
-      ...people,
-      const Person('Nina', 'NI', Colors.blue, 'Guest', 'Unpaid'),
-    ];
-
+    tester.view.physicalSize = const Size(400, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
-      MaterialApp(
-        home: SplitSummary(
-          receiptItems: const [
-            ReceiptLineItem('Coffee', 12550),
-            ReceiptLineItem('Cake', 20227),
-          ],
-          storeName: 'Cafe',
-        ),
-      ),
+      const MaterialApp(home: SettleUp(groupId: demoGroupId)),
     );
-    await tester.tap(find.text('Settle Up'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Cafe'), findsOneWidget);
-    expect(find.text('6 people'), findsOneWidget);
-    expect(find.text('2 items'), findsOneWidget);
-    expect(find.text('₱327.77'), findsOneWidget);
-    expect(find.text('5 payments to Mia'), findsOneWidget);
-    expect(find.text('Jun pays Mia'), findsOneWidget);
-    expect(find.text('Nina pays Mia'), findsOneWidget);
-    expect(find.text('₱54.63'), findsNWidgets(4));
-    expect(find.text('₱54.62'), findsOneWidget);
-
-    final ninaPaymentButton = find.byKey(const ValueKey('settle-payment-5'));
-    await tester.ensureVisible(ninaPaymentButton);
-    await tester.tap(ninaPaymentButton);
     await tester.pump();
 
-    expect(find.text('Paid'), findsOneWidget);
-    expect(find.text('Undo'), findsOneWidget);
+    await tester.tap(find.text('Got cash').first); // Jun, the biggest debt
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Yes, record it'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('₱845.00'), findsNothing); // Jun is settled
+    expect(find.textContaining('3 transfers'), findsOneWidget);
+  });
+
+  testWidgets('a pending payment to you can be confirmed', (tester) async {
+    tester.view.physicalSize = const Size(400, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await GroupService.instance.recordPayment(
+      demoGroupId,
+      const Payment(
+        fromId: 'ana',
+        fromName: 'Ana',
+        toId: 'me',
+        toName: 'You',
+        amountCents: 62000,
+        method: 'gcash',
+      ),
+    );
+    await tester.pumpWidget(
+      const MaterialApp(home: SettleUp(groupId: demoGroupId)),
+    );
+    await tester.pump();
+    expect(find.text('Waiting for you to confirm'), findsOneWidget);
+
+    await tester.tap(find.text('Confirm'));
+    await tester.pumpAndSettle();
+    expect(find.text('Waiting for you to confirm'), findsNothing);
+    expect(find.text('₱620.00'), findsNothing); // Ana is settled
+  });
+
+  testWidgets('a group with no expenses is all settled up', (tester) async {
+    final group = await GroupService.instance.createGroup(
+      name: 'Empty Trip',
+      category: groupCategories.first,
+      others: const [],
+    );
+    await tester.pumpWidget(MaterialApp(home: SettleUp(groupId: group.id)));
+    await tester.pump();
+    expect(find.text('All settled up!'), findsOneWidget);
   });
 
   testWidgets('receipt splitting uses the current Members page count', (

@@ -110,7 +110,12 @@ class _CreateGroupState extends State<CreateGroup> {
       context: context,
       builder: (_) => AddMemberDialog(
         onAdd: (name) => setState(() {
-          final person = personFromName(name, colorIndex: _friends.length + 1);
+          final person = personFromName(
+            name,
+            colorIndex: _friends.length + 1,
+            // Unique ID: expense shares are stored per member ID.
+            id: 'guest-${DateTime.now().microsecondsSinceEpoch}',
+          );
           _friends.add(person);
           _selected.add(person);
         }),

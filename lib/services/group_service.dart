@@ -10,12 +10,15 @@
 /// changes, even when another member edits the group on their phone.
 library;
 
+import 'dart:async';
 import 'dart:math';
 
 import 'package:bahinko/data/in_memory_group_service.dart';
 import 'package:bahinko/models/group.dart';
 import 'package:bahinko/models/person.dart';
 import 'package:bahinko/models/recurring_bill.dart';
+import 'package:bahinko/utils/settle_calculator.dart';
+import 'package:bahinko/utils/stream_utils.dart';
 
 abstract class GroupService {
   /// The service the whole app uses. main() replaces it with Firestore.
@@ -94,6 +97,70 @@ abstract class GroupService {
   Stream<List<RecurringBill>> watchRecurring(String groupId);
   Future<void> addRecurring(String groupId, RecurringBill bill);
   Future<void> setRecurringEnabled(String groupId, String billId, bool enabled);
+
+  // ---------- Balances (Settle Up, Home, Group Detail) ----------
+
+  /// Saves how many members still owe money (the "N unpaid" on cards).
+  /// Screens that have the full ledger call this when it's out of date.
+  Future<void> setUnpaidCount(String groupId, int count);
+
+  /// The group, its expenses and its payments, together and live: what
+  /// balances and smart settle are computed from.
+  Stream<GroupLedger> watchLedger(String groupId) => combineLatest3(
+    watchGroup(groupId),
+    watchExpenses(groupId),
+    watchPayments(groupId),
+    GroupLedger.new,
+  );
+
+  /// Across ALL my groups: how much others owe me, and how much I owe
+  /// (the Home header). Updates live as any group changes.
+  Stream<({int owedToYou, int youOwe})> watchMyTotals() {
+    late final StreamController<({int owedToYou, int youOwe})> out;
+    StreamSubscription<List<Group>>? groupsSub;
+    final ledgerSubs = <String, StreamSubscription<GroupLedger>>{};
+    final ledgers = <String, GroupLedger>{};
+
+    void emit() {
+      var owed = 0, owe = 0;
+      for (final ledger in ledgers.values) {
+        final mine = ledger.balances[myId] ?? 0;
+        if (mine > 0) owed += mine;
+        if (mine < 0) owe -= mine;
+      }
+      out.add((owedToYou: owed, youOwe: owe));
+    }
+
+    out = StreamController(
+      onListen: () {
+        groupsSub = watchMyGroups().listen((groups) {
+          final ids = {for (final g in groups) g.id};
+          // Stop listening to groups I left; start on new ones.
+          for (final id in ledgerSubs.keys.toList()) {
+            if (!ids.contains(id)) {
+              ledgerSubs.remove(id)!.cancel();
+              ledgers.remove(id);
+            }
+          }
+          for (final id in ids) {
+            ledgerSubs.putIfAbsent(
+              id,
+              () => watchLedger(id).listen((ledger) {
+                ledgers[id] = ledger;
+                emit();
+              }, onError: (_) {}), // one broken group shouldn't hide the rest
+            );
+          }
+          if (ids.isEmpty) emit();
+        }, onError: out.addError);
+      },
+      onCancel: () async {
+        await groupsSub?.cancel();
+        await Future.wait(ledgerSubs.values.map((s) => s.cancel()));
+      },
+    );
+    return out.stream;
+  }
 }
 
 /// Checks an expense before saving. Throws [GroupFailure] with a message

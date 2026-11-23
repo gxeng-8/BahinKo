@@ -283,6 +283,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(home: AssignItems(scan: reviewAiReceipt(goodAnswer))),
       );
+      await tester.pump(); // groups load, enabling Confirm Split
       await tester.tap(find.text('Confirm Split'));
       await tester.pumpAndSettle();
       expect(find.text('Some items need review'), findsOneWidget);

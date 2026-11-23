@@ -1,311 +1,319 @@
-/// Breakdown of how much each member owes.
+/// Figma Frame 11 "Split Summary": a saved expense shown as a receipt,
+/// with what each person pays. Loaded live from [GroupService], so edits
+/// and new members show up immediately.
 library;
 
 import 'package:flutter/material.dart';
-import 'package:bahinko/data/mock_data.dart';
-import 'package:bahinko/models/receipt_line_item.dart';
-import 'package:bahinko/utils/navigation.dart';
-import 'package:bahinko/utils/split_calculator.dart';
+import 'package:share_plus/share_plus.dart';
+
+import 'package:bahinko/data/in_memory_group_service.dart' show demoGroupId;
+import 'package:bahinko/models/group.dart';
+import 'package:bahinko/models/person.dart';
 import 'package:bahinko/screens/settle/settle_up_screen.dart';
+import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
+import 'package:bahinko/theme/app_theme.dart';
+import 'package:bahinko/utils/currency.dart';
+import 'package:bahinko/utils/navigation.dart';
+import 'package:bahinko/widgets/app_page.dart';
+import 'package:bahinko/widgets/app_toast.dart';
+import 'package:bahinko/widgets/async_state_view.dart';
 import 'package:bahinko/widgets/avatar.dart';
 import 'package:bahinko/widgets/btn.dart';
+import 'package:bahinko/widgets/pill.dart';
 
-class SplitSummary extends StatelessWidget {
-  const SplitSummary({
-    super.key,
-    this.receiptItems,
-    this.storeName = 'Samgyup House',
-  });
+class SplitSummary extends StatefulWidget {
+  const SplitSummary({super.key, this.groupId = demoGroupId, this.expenseId});
 
-  final List<ReceiptLineItem>? receiptItems;
-  final String storeName;
+  final String groupId;
+
+  /// The expense to show. If null, shows the group's newest expense.
+  final String? expenseId;
+
+  @override
+  State<SplitSummary> createState() => _SplitSummaryState();
+}
+
+class _SplitSummaryState extends State<SplitSummary> {
+  late Stream<Group> _group;
+  late Stream<GroupExpense> _expense;
+
+  @override
+  void initState() {
+    super.initState();
+    _listen();
+  }
+
+  void _listen() {
+    final service = GroupService.instance;
+    _group = service.watchGroup(widget.groupId);
+    final id = widget.expenseId;
+    _expense = id != null
+        ? service.watchExpense(widget.groupId, id)
+        : service.watchExpenses(widget.groupId).map((list) {
+            if (list.isEmpty) {
+              throw const GroupFailure('No expenses in this group yet.');
+            }
+            return list.first;
+          });
+  }
+
+  void _reload() => setState(_listen);
+
+  /// Plain-text summary for the group chat (share sheet).
+  Future<void> _share(Group group, GroupExpense e) async {
+    final lines = [
+      '${e.title}: ${formatMoney(e.amountCents)} (paid by ${e.paidBy})',
+      for (final s in e.shares.entries)
+        if (s.key != e.paidById)
+          '• ${group.memberById(s.key)?.name ?? 'Member'} pays '
+              '${formatMoney(s.value)}',
+      'Settle up in BahinKo.',
+    ];
+    try {
+      await SharePlus.instance.share(ShareParams(text: lines.join('\n')));
+    } catch (_) {
+      if (mounted) showAppToast(context, "Couldn't open sharing here.");
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<Group>(
+    stream: _group,
+    builder: (context, groupSnap) => StreamBuilder<GroupExpense>(
+      stream: _expense,
+      builder: (context, expenseSnap) {
+        final group = groupSnap.data;
+        final expense = expenseSnap.data;
+        // Show an error from either stream; load until both arrive.
+        final AsyncSnapshot<GroupExpense> combined = groupSnap.hasError
+            ? AsyncSnapshot.withError(ConnectionState.done, groupSnap.error!)
+            : (group == null ? const AsyncSnapshot.waiting() : expenseSnap);
+        return AppPage(
+          'Split Summary',
+          AsyncStateView<GroupExpense>(
+            snapshot: combined,
+            onRetry: _reload,
+            builder: (e) => _ReceiptCard(group: group!, expense: e),
+          ),
+          actions: [
+            if (group != null && expense != null)
+              IconButton(
+                tooltip: 'Share',
+                icon: const Icon(Icons.share_outlined),
+                onPressed: () => _share(group, expense),
+              ),
+          ],
+          bottom: group == null
+              ? null
+              : Btn(
+                  'Settle Up',
+                  () => go(context, SettleUp(groupId: widget.groupId)),
+                ),
+        );
+      },
+    ),
+  );
+}
+
+/// The white receipt with zigzag edges (Figma 11).
+class _ReceiptCard extends StatelessWidget {
+  const _ReceiptCard({required this.group, required this.expense});
+
+  final Group group;
+  final GroupExpense expense;
 
   @override
   Widget build(BuildContext context) {
-    final displayItems = receiptItems ?? items;
-    final currentMembers = groupMembers.value;
-    final numberOfPeople = currentMembers.length;
-    final total = displayItems.fold<int>(
-      0,
-      (sum, item) => sum + item.amountInCents,
-    );
-    final memberShares = calculateMemberShares(
-      total,
-      numberOfPeople,
-      useSampleShares: receiptItems == null,
-    );
-    String formatAmount(int amountInCents) {
-      final pesos = amountInCents ~/ 100;
-      final centavos = amountInCents % 100;
-      final pesosText = pesos.toString().replaceAllMapped(
-        RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-        (match) => '${match[1]},',
-      );
-      return centavos == 0
-          ? '₱$pesosText'
-          : '₱$pesosText.${centavos.toString().padLeft(2, '0')}';
-    }
+    final e = expense;
+    final myId = GroupService.instance.myId;
+    const mono = TextStyle(fontSize: 13, letterSpacing: 0.3);
+    final date = e.createdAt;
+    final subtitle = [
+      group.name,
+      if (date != null) '${_months[date.month - 1]} ${date.day}, ${date.year}',
+      'Paid by ${e.paidById == myId ? 'You' : e.paidBy}',
+    ].join(' · ');
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAF9),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    height: 178,
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0xFF159B82), Color(0xFF087D69)],
-                      ),
+    return ClipPath(
+      clipper: _ZigzagClipper(),
+      child: Container(
+        color: Colors.white,
+        padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
+        child: Column(
+          children: [
+            Text(e.title.toUpperCase(), style: AppText.display(20, color: ink)),
+            const SizedBox(height: 2),
+            Text(subtitle, textAlign: TextAlign.center, style: AppText.caption),
+            if (e.fromAi) ...[
+              const SizedBox(height: 6),
+              const Pill('Items found by AI', icon: Icons.auto_awesome),
+            ],
+            const _Dashes(),
+            for (var i = 0; i < e.items.length; i++)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    SizedBox(width: 22, child: Text('${i + 1}', style: mono)),
+                    Expanded(
+                      child: Text(e.items[i].name.toUpperCase(), style: mono),
                     ),
-                  ),
-                  SafeArea(
-                    bottom: false,
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 14),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              '6  Split Summary',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.75),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.13),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: IconButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  icon: const Icon(
-                                    Icons.chevron_left_rounded,
-                                    color: Colors.white,
-                                    size: 28,
-                                  ),
-                                ),
-                              ),
-                              const Expanded(
-                                child: Text(
-                                  'Split Summary',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ),
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.13),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: IconButton(
-                                  onPressed: () {},
-                                  icon: const Icon(
-                                    Icons.share_outlined,
-                                    color: Colors.white,
-                                    size: 22,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.fromLTRB(16, 132, 16, 16),
-                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x18000000),
-                          blurRadius: 12,
-                          offset: Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Center(
-                          child: Column(
-                            children: [
-                              Text(
-                                storeName,
-                                style: const TextStyle(
-                                  color: Color(0xFF202523),
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                receiptItems == null
-                                    ? 'Oct 20, 2026 · $numberOfPeople people'
-                                    : '$numberOfPeople people sharing',
-                                style: const TextStyle(
-                                  color: Color(0xFF8A9390),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        const Divider(height: 1, color: Color(0xFFE7ECE9)),
-                        const SizedBox(height: 12),
-                        for (final item in displayItems)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    item.name,
-                                    style: const TextStyle(
-                                      color: Color(0xFF7B8581),
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  formatAmount(item.amountInCents),
-                                  style: const TextStyle(
-                                    color: Color(0xFF202523),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        const SizedBox(height: 2),
-                        const Divider(height: 1, color: Color(0xFFE7ECE9)),
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Total',
-                              style: TextStyle(
-                                color: Color(0xFF202523),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            Text(
-                              formatAmount(total),
-                              style: const TextStyle(
-                                color: green,
-                                fontSize: 21,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Each person pays',
-                          style: TextStyle(
-                            color: Color(0xFF202523),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        for (var i = 0; i < currentMembers.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              children: [
-                                Avatar(currentMembers[i], size: 32),
-                                const SizedBox(width: 10),
-                                Text(
-                                  currentMembers[i].name,
-                                  style: const TextStyle(
-                                    color: Color(0xFF202523),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  formatAmount(memberShares[i]),
-                                  style: const TextStyle(
-                                    color: Color(0xFF202523),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
+                    Text(formatMoney(e.items[i].amountCents), style: mono),
+                  ],
+                ),
               ),
+            if (e.items.isEmpty) Text(e.title, style: mono),
+            const _Dashes(),
+            Row(
+              children: [
+                Text('TOTAL', style: AppText.section),
+                const Spacer(),
+                Text(
+                  formatMoney(e.amountCents),
+                  style: AppText.money(22, color: green),
+                ),
+              ],
             ),
-          ),
-          SafeArea(
-            top: false,
-            child: Container(
-              color: const Color(0xFFF8FAF9),
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Btn(
-                    'Settle Up',
-                    () => go(
-                      context,
-                      SettleUp(
-                        receiptItems: receiptItems,
-                        storeName: storeName,
-                      ),
-                    ),
+            const _Dashes(),
+            Row(
+              children: [
+                const Text(
+                  'Each person pays',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                    color: muted,
                   ),
-                  const SizedBox(height: 8),
-                  Btn('Download report', () {}, outlined: true),
-                ],
-              ),
+                ),
+                const Spacer(),
+                Text(
+                  '${e.shares.length} people sharing',
+                  style: AppText.caption,
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            for (final share in e.shares.entries)
+              _ShareRow(
+                person: group.memberById(share.key),
+                isMe: share.key == myId,
+                paidTheBill: share.key == e.paidById,
+                amountCents: share.value,
+              ),
+            const _Dashes(),
+            const Text(
+              'THANK YOU!',
+              style: TextStyle(letterSpacing: 2, color: muted),
+            ),
+          ],
+        ),
       ),
     );
   }
+
+  static const _months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+}
+
+/// One "each person pays" line: avatar, name, amount.
+class _ShareRow extends StatelessWidget {
+  const _ShareRow({
+    required this.person,
+    required this.isMe,
+    required this.paidTheBill,
+    required this.amountCents,
+  });
+
+  final Person? person;
+  final bool isMe, paidTheBill;
+  final int amountCents;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      children: [
+        if (person != null) Avatar(person!, size: 28),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            isMe ? 'You' : (person?.name ?? 'Former member'),
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+        if (paidTheBill) ...[
+          const Pill.paid(text: 'Paid the bill'),
+          const SizedBox(width: 8),
+        ],
+        Text(
+          formatMoney(amountCents),
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Dashed divider, like on a printed receipt.
+class _Dashes extends StatelessWidget {
+  const _Dashes();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 12),
+    child: LayoutBuilder(
+      builder: (context, c) => Row(
+        children: List.generate(
+          (c.maxWidth / 8).floor(),
+          (_) => Container(
+            width: 4,
+            height: 1,
+            margin: const EdgeInsets.only(right: 4),
+            color: border,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Cuts small triangles into the top and bottom edges (torn-paper look).
+class _ZigzagClipper extends CustomClipper<Path> {
+  static const _tooth = 10.0;
+
+  @override
+  Path getClip(Size size) {
+    final path = Path()..moveTo(0, _tooth);
+    // Top edge: up and down teeth from left to right.
+    for (var x = 0.0; x < size.width; x += _tooth) {
+      path
+        ..lineTo(x + _tooth / 2, 0)
+        ..lineTo(x + _tooth, _tooth);
+    }
+    path.lineTo(size.width, size.height - _tooth);
+    // Bottom edge: teeth from right to left.
+    for (var x = size.width; x > 0; x -= _tooth) {
+      path
+        ..lineTo(x - _tooth / 2, size.height)
+        ..lineTo(x - _tooth, size.height - _tooth);
+    }
+    return path..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }

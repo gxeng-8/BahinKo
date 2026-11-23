@@ -25,10 +25,6 @@ import 'package:bahinko/widgets/section_header.dart';
 class Home extends StatelessWidget {
   const Home({super.key});
 
-  // BACKEND STEP: these totals will be computed from the user's payments.
-  static const _owedToYouCents = 106000;
-  static const _youOweCents = 35000;
-
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
     child: Column(
@@ -41,10 +37,7 @@ class Home extends StatelessWidget {
           children: [
             const Padding(
               padding: EdgeInsets.only(bottom: 44),
-              child: _BalanceHeader(
-                owedToYouCents: _owedToYouCents,
-                youOweCents: _youOweCents,
-              ),
+              child: _BalanceHeader(),
             ),
             const Positioned(
               left: 16,
@@ -102,56 +95,71 @@ class Home extends StatelessWidget {
 }
 
 /// Green header: profile/notification icons, net balance, and two chips.
-class _BalanceHeader extends StatelessWidget {
-  const _BalanceHeader({
-    required this.owedToYouCents,
-    required this.youOweCents,
-  });
-
-  final int owedToYouCents;
-  final int youOweCents;
+/// Green header: net balance and "owed to you / you owe" across ALL my
+/// groups, computed live from real expenses and confirmed payments.
+class _BalanceHeader extends StatefulWidget {
+  const _BalanceHeader();
 
   @override
-  Widget build(BuildContext context) {
-    final net = owedToYouCents - youOweCents;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 48, 20, 64),
-      decoration: const BoxDecoration(
-        gradient: brandGradient,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _HeaderIcon(Icons.person_outline, onTap: () {}),
-              _HeaderIcon(Icons.notifications_none, onTap: () {}),
-            ],
-          ),
-          const Text('Net balance', style: TextStyle(color: Colors.white70)),
-          Text(formatMoney(net), style: AppText.money(40, color: Colors.white)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: [
-              Pill(
-                'Owed to you ${formatMoney(owedToYouCents)}',
-                bg: lime,
-                fg: deep,
-              ),
-              Pill(
-                'You owe ${formatMoney(youOweCents)}',
-                bg: Colors.white,
-                fg: errorFg,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  State<_BalanceHeader> createState() => _BalanceHeaderState();
+}
+
+class _BalanceHeaderState extends State<_BalanceHeader> {
+  late final Stream<({int owedToYou, int youOwe})> _totals = GroupService
+      .instance
+      .watchMyTotals();
+
+  @override
+  Widget build(BuildContext context) =>
+      StreamBuilder<({int owedToYou, int youOwe})>(
+        stream: _totals,
+        builder: (context, snap) {
+          final totals = snap.data;
+          // Loading or error: show dashes instead of wrong numbers.
+          String money(int? cents) => cents == null ? '₱—' : formatMoney(cents);
+          final net = totals == null ? null : totals.owedToYou - totals.youOwe;
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(20, 48, 20, 64),
+            decoration: const BoxDecoration(
+              gradient: brandGradient,
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _HeaderIcon(Icons.person_outline, onTap: () {}),
+                    _HeaderIcon(Icons.notifications_none, onTap: () {}),
+                  ],
+                ),
+                const Text(
+                  'Net balance',
+                  style: TextStyle(color: Colors.white70),
+                ),
+                Text(money(net), style: AppText.money(40, color: Colors.white)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    Pill(
+                      'Owed to you ${money(totals?.owedToYou)}',
+                      bg: lime,
+                      fg: deep,
+                    ),
+                    Pill(
+                      'You owe ${money(totals?.youOwe)}',
+                      bg: Colors.white,
+                      fg: errorFg,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      );
 }
 
 /// Small translucent round icon button used in the green header.

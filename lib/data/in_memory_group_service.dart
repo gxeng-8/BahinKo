@@ -18,7 +18,7 @@ import 'package:bahinko/services/group_service.dart';
 /// ID of the sample "Dinner at Jaro" group (the default for group screens).
 const demoGroupId = 'dinner-jaro';
 
-class InMemoryGroupService implements GroupService {
+class InMemoryGroupService extends GroupService {
   InMemoryGroupService() {
     // The sample group's members live in the shared `groupMembers` list
     // (the receipt screens still read it), so re-emit when it changes.
@@ -35,6 +35,7 @@ class InMemoryGroupService implements GroupService {
       members: const [], // read live from groupMembers, see [groups]
       inviteCode: 'DJ7Q2',
       createdBy: myUid,
+      memberIds: const [myUid], // everyone else is a guest here
       totalCents: 295000,
       expenseCount: 2,
       unpaidCount: 3,
@@ -45,6 +46,7 @@ class InMemoryGroupService implements GroupService {
       category: categoryNamed('Boarding'),
       members: people.sublist(0, 4), // Mia, Jun, Ana, Leo (not you)
       inviteCode: 'BH4K9',
+      memberIds: const ['mia'],
       createdBy: 'someone-else', // you're not in this one: try joining it
       totalCents: 1200000,
       expenseCount: 1,
@@ -169,6 +171,7 @@ class InMemoryGroupService implements GroupService {
       ],
       inviteCode: generateInviteCode(),
       createdBy: myUid,
+      memberIds: const [myUid],
       createdAt: DateTime.now(),
     );
     _groups.insert(0, group); // newest first, like Firestore
@@ -182,14 +185,19 @@ class InMemoryGroupService implements GroupService {
       final list = groupMembers.value;
       groupMembers.value = [
         ...list,
-        personFromName(name, colorIndex: list.length),
+        personFromName(name, colorIndex: list.length, id: _newId('guest')),
       ]; // the groupMembers listener notifies the streams
       return;
     }
     final i = _groups.indexWhere((g) => g.id == groupId);
     if (i == -1) throw const GroupFailure('This group no longer exists.');
     final g = _groups[i];
-    _groups[i] = g.copyWith(members: [...g.members, personFromName(name)]);
+    _groups[i] = g.copyWith(
+      members: [
+        ...g.members,
+        personFromName(name, id: _newId('guest')),
+      ],
+    );
     _notifyAll();
   }
 
@@ -205,10 +213,23 @@ class InMemoryGroupService implements GroupService {
     final alreadyIn = g.members.any((m) => m.id == myUid);
     if (!alreadyIn) {
       final me = appUserPerson(myUid, yourName);
+      final base = _groups[i];
+      _groups[i] = Group(
+        id: base.id,
+        name: base.name,
+        category: base.category,
+        members: g.id == demoGroupId ? base.members : [...base.members, me],
+        inviteCode: base.inviteCode,
+        createdBy: base.createdBy,
+        memberIds: [...base.memberIds, myUid],
+        totalCents: base.totalCents,
+        expenseCount: base.expenseCount,
+        unpaidCount: base.unpaidCount,
+        createdAt: base.createdAt,
+      );
       if (g.id == demoGroupId) {
         groupMembers.value = [...groupMembers.value, me];
       } else {
-        _groups[i] = g.copyWith(members: [...g.members, me]);
         _notifyAll();
       }
     }
@@ -255,6 +276,7 @@ class InMemoryGroupService implements GroupService {
         members: g.members,
         inviteCode: g.inviteCode,
         createdBy: g.createdBy,
+        memberIds: g.memberIds,
         totalCents: g.totalCents + total,
         expenseCount: g.expenseCount + count,
         unpaidCount: g.unpaidCount + unpaid,
@@ -292,12 +314,7 @@ class InMemoryGroupService implements GroupService {
     );
     _updateGroup(
       groupId,
-      (g) => _withTotals(
-        g,
-        total: expense.amountCents,
-        count: 1,
-        unpaid: expense.unpaidCount,
-      ),
+      (g) => _withTotals(g, total: expense.amountCents, count: 1),
     );
     _expenses.putIfAbsent(groupId, () => []).insert(0, saved);
     _log(
@@ -464,6 +481,16 @@ class InMemoryGroupService implements GroupService {
       orElse: () => throw const GroupFailure('This bill was deleted.'),
     );
     bill.enabled = enabled;
+    _notifyAll();
+  }
+
+  @override
+  Future<void> setUnpaidCount(String groupId, int count) async {
+    final i = _groups.indexWhere((g) => g.id == groupId);
+    if (i == -1) return;
+    final g = _groups[i];
+    if (g.unpaidCount == count) return;
+    _groups[i] = _withTotals(g, unpaid: count - g.unpaidCount);
     _notifyAll();
   }
 }

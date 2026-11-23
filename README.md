@@ -16,8 +16,9 @@ BahinKo is a Flutter app for groups (barkadas, dormmates, boarding houses) who s
 | Create groups from templates, invite by **QR code / link / code**, add guests without the app | ✅ |
 | Live group data shared between phones (Firebase), with loading / empty / error states | ✅ |
 | **AI receipt scanner**: on-device OCR + Gemini item extraction, "Needs review" flags, editable items, fallbacks ([spec](docs/AI_FEATURE_SPEC.md)) | ✅ |
-| Add expense with split modes, split summary, PDF/CSV report | 🚧 M3 |
-| Settle up: GCash/Maya hand-off, payment proof, reminders, smart settle | 🚧 M4 |
+| Save scanned/typed receipts to a group (split equally, choose who paid), live split summary | ✅ |
+| Add Expense form with split modes (Frame 6), PDF/CSV report | 🚧 |
+| Settle up from real balances: smart settle (fewest transfers), GCash/Maya/cash, receiver confirms, reminders; live Home balances | ✅ |
 | Recurring bills, activity history, personal ledger, statistics | 🚧 M5 |
 
 ---
