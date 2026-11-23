@@ -4,7 +4,9 @@ rules_version = '2';
 // Deploy with: firebase deploy --only firestore:rules
 //
 // Rule of thumb: only members of a group (their uid is in memberIds) can
-// see or change it. Everything not allowed below is denied.
+// see or change it. The one exception is joining: someone who knows the
+// group's invite code may add themselves (and nothing else).
+// Everything not allowed below is denied.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -24,6 +26,33 @@ service cloud.firestore {
         && g.members is list && g.members.size() <= 50;
     }
 
+    // A normal edit by a member (e.g. adding a guest). Nobody can change
+    // who created the group or which accounts are in it.
+    function isMemberEdit() {
+      return isMemberOf(resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.memberIds == resource.data.memberIds
+        && validGroup(request.resource.data);
+    }
+
+    // Joining with an invite code. The ONLY allowed change is:
+    //   * my uid appended to memberIds,
+    //   * one member card appended to members, with my uid,
+    //   * lastJoinCode set to the group's real invite code (proof I know it).
+    function isJoining() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return signedIn()
+        && !(request.auth.uid in before.memberIds)
+        && after.diff(before).affectedKeys()
+             .hasOnly(['memberIds', 'members', 'lastJoinCode'])
+        && after.lastJoinCode == before.inviteCode
+        && after.memberIds == before.memberIds.concat([request.auth.uid])
+        && after.members.size() == before.members.size() + 1
+        && after.members[after.members.size() - 1].id == request.auth.uid
+        && after.members.size() <= 50;
+    }
+
     match /groups/{groupId} {
       // Read: members only. (The app's "my groups" query filters by
       // memberIds array-contains my uid, which these rules require.)
@@ -35,13 +64,7 @@ service cloud.firestore {
         && request.resource.data.memberIds == [request.auth.uid]
         && validGroup(request.resource.data);
 
-      // Update (e.g. add a guest): members only; nobody can change who
-      // created the group or which accounts are in it.
-      // STEP 5 (join by invite code) will allow adding yourself here.
-      allow update: if isMemberOf(resource.data)
-        && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.memberIds == resource.data.memberIds
-        && validGroup(request.resource.data);
+      allow update: if isMemberEdit() || isJoining();
 
       // Delete: only the person who created the group.
       allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
@@ -52,6 +75,31 @@ service cloud.firestore {
           get(/databases/$(database)/documents/groups/$(groupId)).data
         );
       }
+    }
+
+    // invites/{code} → which group a code belongs to.
+    match /invites/{code} {
+      // Look up ONE code you already know. Listing all codes is blocked,
+      // so codes can't be harvested.
+      allow get: if signedIn();
+      allow list: if false;
+
+      // Only a group's creator may publish its code, and only if the code
+      // matches the group. getAfter() sees the group even when both are
+      // written in the same batch.
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.createdBy == request.auth.uid
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.inviteCode == code;
+
+      // Re-publishing is allowed only for your own code (so another group
+      // can never take over a code that's already in use).
+      allow update: if signedIn()
+        && resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.groupId == resource.data.groupId;
+
+      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
     }
   }
 }

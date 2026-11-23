@@ -79,6 +79,7 @@ class Group {
     required this.category,
     required this.members,
     required this.inviteCode,
+    this.createdBy = '',
     this.totalCents = 0,
     this.expenseCount = 0,
     this.unpaidCount = 0,
@@ -102,6 +103,10 @@ class Group {
   /// Null for a moment after creation, until the server sets the time.
   final DateTime? createdAt;
 
+  /// User ID of the person who created the group (may delete it and
+  /// publish its invite code).
+  final String createdBy;
+
   String get inviteLink => 'https://bahinko.app/j/$inviteCode';
 
   /// Returns a copy with a different member list (groups are immutable).
@@ -111,6 +116,7 @@ class Group {
     category: category,
     members: members ?? this.members,
     inviteCode: inviteCode,
+    createdBy: createdBy,
     totalCents: totalCents,
     expenseCount: expenseCount,
     unpaidCount: unpaidCount,

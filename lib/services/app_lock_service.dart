@@ -1,43 +1,125 @@
 /// Stores and checks the 4-digit app-lock PIN.
 ///
-/// BACKEND STEP: right now the PIN only lives in memory, so it is forgotten
-/// when the app closes. Later we will:
-///   1. save a SHA-256 *hash* of the PIN (never the PIN itself) with
-///      `flutter_secure_storage`, and
-///   2. add fingerprint unlock with `local_auth`.
-/// The methods are already `async`, so screens won't need to change.
+/// Security:
+/// * The PIN itself is NEVER saved. We save a random "salt" and the
+///   SHA-256 hash of salt + PIN. To check a PIN we hash it again and
+///   compare. Someone who reads the storage can't get the PIN back, and
+///   the salt stops pre-computed hash tables from cracking it.
+/// * Wrong attempts and the 30-second lockout are saved too, so closing
+///   and reopening the app doesn't reset the lockout.
 library;
 
-class AppLockService {
-  AppLockService._();
+import 'dart:convert';
+import 'dart:math';
 
-  /// One shared instance for the whole app (singleton).
-  static final instance = AppLockService._();
+import 'package:crypto/crypto.dart';
+
+import 'package:bahinko/services/secure_store.dart';
+
+/// Result of checking a PIN.
+sealed class PinResult {
+  const PinResult();
+}
+
+class PinCorrect extends PinResult {
+  const PinCorrect();
+}
+
+class PinWrong extends PinResult {
+  const PinWrong(this.attemptsLeft);
+  final int attemptsLeft;
+}
+
+class PinLockedOut extends PinResult {
+  const PinLockedOut(this.remaining);
+  final Duration remaining;
+}
+
+class AppLockService {
+  AppLockService({KeyValueStore? store}) : _store = store ?? MemoryStore();
+
+  /// The service the whole app uses. main() gives it real secure storage;
+  /// tests keep the in-memory default.
+  static AppLockService instance = AppLockService();
 
   /// Wrong attempts allowed before the keypad is paused.
   static const maxAttempts = 5;
+  static const lockoutDuration = Duration(seconds: 30);
 
-  String? _pin;
-  int _failedAttempts = 0;
+  // Storage keys.
+  static const _hashKey = 'pin_hash';
+  static const _saltKey = 'pin_salt';
+  static const _failsKey = 'pin_failed_attempts';
+  static const _lockedUntilKey = 'pin_locked_until';
 
-  /// True once the user has created a PIN.
-  Future<bool> hasPin() async => _pin != null;
+  final KeyValueStore _store;
 
-  /// Saves a new PIN and resets the failed-attempt counter.
+  /// True once the user has created a PIN on this device.
+  Future<bool> hasPin() async => await _store.read(_hashKey) != null;
+
+  /// Saves a new PIN (as salt + hash) and clears any lockout.
   Future<void> setPin(String pin) async {
-    _pin = pin;
-    _failedAttempts = 0;
+    final salt = _randomSalt();
+    await _store.write(_saltKey, salt);
+    await _store.write(_hashKey, _hash(salt, pin));
+    await _resetAttempts();
   }
 
-  /// Returns true if [pin] matches. Counts wrong attempts.
-  Future<bool> verify(String pin) async {
-    final ok = pin == _pin;
-    _failedAttempts = ok ? 0 : _failedAttempts + 1;
-    return ok;
+  /// Checks [pin]. Counts wrong attempts and starts a lockout after
+  /// [maxAttempts] wrong tries.
+  Future<PinResult> verify(String pin) async {
+    final remaining = await lockoutRemaining();
+    if (remaining != null) return PinLockedOut(remaining);
+
+    final salt = await _store.read(_saltKey) ?? '';
+    final saved = await _store.read(_hashKey);
+    if (saved != null && _hash(salt, pin) == saved) {
+      await _resetAttempts();
+      return const PinCorrect();
+    }
+
+    final fails = int.parse(await _store.read(_failsKey) ?? '0') + 1;
+    if (fails >= maxAttempts) {
+      final until = DateTime.now().add(lockoutDuration);
+      await _store.write(_lockedUntilKey, until.toIso8601String());
+      await _store.write(_failsKey, '0'); // fresh tries after the wait
+      return const PinLockedOut(lockoutDuration);
+    }
+    await _store.write(_failsKey, '$fails');
+    return PinWrong(maxAttempts - fails);
   }
 
-  int get attemptsLeft => maxAttempts - _failedAttempts;
+  /// Time left in the current lockout, or null if not locked out.
+  Future<Duration?> lockoutRemaining() async {
+    final raw = await _store.read(_lockedUntilKey);
+    if (raw == null) return null;
+    final left = DateTime.parse(raw).difference(DateTime.now());
+    if (left <= Duration.zero) {
+      await _store.delete(_lockedUntilKey);
+      return null;
+    }
+    return left;
+  }
 
-  /// Clears the lockout after the wait time is over.
-  void resetAttempts() => _failedAttempts = 0;
+  /// Removes the PIN (e.g. when the user turns app lock off).
+  Future<void> clearPin() async {
+    await _store.delete(_hashKey);
+    await _store.delete(_saltKey);
+    await _resetAttempts();
+  }
+
+  Future<void> _resetAttempts() async {
+    await _store.delete(_failsKey);
+    await _store.delete(_lockedUntilKey);
+  }
+
+  /// SHA-256 of salt + PIN, as a hex string.
+  String _hash(String salt, String pin) =>
+      sha256.convert(utf8.encode('$salt:$pin')).toString();
+
+  /// 16 random bytes from a cryptographically secure generator.
+  String _randomSalt() {
+    final rng = Random.secure();
+    return base64Encode(List<int>.generate(16, (_) => rng.nextInt(256)));
+  }
 }

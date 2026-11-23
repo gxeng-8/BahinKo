@@ -1,7 +1,10 @@
 /// A member of a group (an app user or a guest without the app).
 library;
 
+import 'dart:math';
 import 'dart:ui';
+
+import 'package:bahinko/theme/app_colors.dart';
 
 class Person {
   final String name, initials, pay, status;
@@ -39,5 +42,35 @@ class Person {
     map['pay'] as String? ?? '',
     map['status'] as String? ?? '',
     id: map['id'] as String? ?? '',
+  );
+}
+
+/// Avatar colors, picked in turn for new members.
+const memberColors = [green, orange, purple, deep, Color(0xFF5ED38A)];
+
+/// Builds a [Person] from a typed name: initials from the first and last
+/// word ("Rico Santos" → "RS") and a color from [memberColors].
+Person personFromName(
+  String name, {
+  int? colorIndex,
+  String id = '',
+  String pay = 'Guest',
+}) {
+  final normalizedName = name.trim();
+  final nameParts = normalizedName.split(RegExp(r'\s+'));
+  final initials = nameParts.length > 1
+      ? '${nameParts.first[0]}${nameParts.last[0]}'
+      : nameParts.first.substring(0, min(2, nameParts.first.length));
+  // Same name → same color on every phone. (Sum of character codes:
+  // unlike hashCode, it's the same on every device.)
+  final index =
+      colorIndex ?? normalizedName.codeUnits.fold<int>(0, (a, b) => a + b);
+  return Person(
+    normalizedName,
+    initials.toUpperCase(),
+    memberColors[index % memberColors.length],
+    pay,
+    'Settled',
+    id: id,
   );
 }

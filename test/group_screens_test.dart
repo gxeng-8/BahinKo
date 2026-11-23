@@ -10,10 +10,15 @@ import 'package:bahinko/screens/group/group_detail_screen.dart';
 import 'package:bahinko/screens/auth/app_lock_screen.dart';
 import 'package:bahinko/screens/group/create_group_screen.dart';
 import 'package:bahinko/screens/group/invite_members_screen.dart';
+import 'package:bahinko/screens/group/join_group_screen.dart';
 import 'package:bahinko/screens/group/members_screen.dart';
 import 'package:bahinko/screens/shell.dart';
+import 'package:bahinko/services/app_lock_service.dart';
+import 'package:bahinko/services/auth_service.dart';
 import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/utils/currency.dart';
+
+import 'fakes.dart';
 
 Widget _app(Widget home) => MaterialApp(home: home);
 
@@ -40,6 +45,53 @@ void main() {
     groupMembers.value = people;
     service = InMemoryGroupService();
     GroupService.instance = service;
+    AuthService.instance = FakeAuthService(name: 'Renz');
+    AppLockService.instance = AppLockService(); // fresh, no PIN yet
+  });
+
+  test('parseInviteCode accepts codes and links, rejects junk', () {
+    expect(parseInviteCode('dj7q2'), 'DJ7Q2');
+    expect(parseInviteCode('  https://bahinko.app/j/DJ7Q2 '), 'DJ7Q2');
+    expect(parseInviteCode('bahinko.app/j/bh4k9/'), 'BH4K9');
+    expect(parseInviteCode('DJ7Q'), isNull); // too short
+    expect(parseInviteCode('DJ0Q2'), isNull); // 0 isn't used in codes
+    expect(parseInviteCode('hello world'), isNull);
+  });
+
+  testWidgets('join: validates the code, reports unknown codes, joins', (
+    tester,
+  ) async {
+    _phoneSize(tester);
+    await tester.pumpWidget(_app(const JoinGroupScreen()));
+    expect(find.text('Renz'), findsOneWidget); // name pre-filled
+
+    await tester.enterText(find.byKey(const ValueKey('invite-code')), 'abc');
+    await tester.tap(find.text('Join group'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Codes are 5 letters/numbers, like DJ7Q2'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byKey(const ValueKey('invite-code')), 'ZZZZZ');
+    await tester.tap(find.text('Join group'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'No group found with code ZZZZZ. Check the code and try again.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('invite-code')),
+      'bahinko.app/j/bh4k9',
+    );
+    await tester.tap(find.text('Join group'));
+    await tester.pumpAndSettle();
+    expect(find.text('Boarding House Bills'), findsOneWidget); // its page
+    final boarding = service.groups.firstWhere((g) => g.id == 'boarding-house');
+    expect(boarding.members.last.name, 'Renz');
   });
 
   test('formatMoney adds commas and two decimals', () {
@@ -174,4 +226,10 @@ class _OfflineService implements GroupService {
   @override
   Future<void> addGuest(String groupId, String name) =>
       Future.error(const GroupFailure("Can't reach the server."));
+
+  @override
+  Future<String> joinGroup(String code, String yourName) =>
+      Future.error(const GroupFailure("Can't reach the server."));
+  @override
+  Future<void> ensureInvite(Group group) async {}
 }

@@ -6,28 +6,33 @@
 ///     memberIds: [uid, ...]         ← app users; used for security + queries
 ///     members:   [{id, name, ...}]  ← everyone shown in the app, incl. guests
 ///     totalCents, expenseCount, unpaidCount   ← summary for the Home cards
+///     lastJoinCode                  ← proof of the code, written when joining
 ///   groups/{groupId}/expenses/{expenseId}
 ///     title, paidBy, splitWays, amountCents, unpaidCount, createdAt
+///   invites/{code}
+///     groupId, groupName, createdBy ← lets non-members find a group by code
 library;
 
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'package:bahinko/data/mock_data.dart' show personFromName;
 import 'package:bahinko/models/group.dart';
 import 'package:bahinko/models/person.dart';
 import 'package:bahinko/services/auth_service.dart';
 import 'package:bahinko/services/group_service.dart';
 
 class FirestoreGroupService implements GroupService {
-  /// How long to wait for the server to confirm a write.
-  static const writeTimeout = Duration(seconds: 10);
+  /// How long to wait for the server.
+  static const serverTimeout = Duration(seconds: 10);
 
   final _db = FirebaseFirestore.instance;
 
   CollectionReference<Map<String, dynamic>> get _groups =>
       _db.collection('groups');
+
+  CollectionReference<Map<String, dynamic>> get _invites =>
+      _db.collection('invites');
 
   /// The signed-in user's ID. Every query needs it.
   String get _uid {
@@ -92,53 +97,142 @@ class FirestoreGroupService implements GroupService {
   }) async {
     final uid = _uid;
     final doc = _groups.doc(); // new document with a random ID
-    final members = [ownerPerson(uid), ...others];
-    final group = Group(
-      id: doc.id,
-      name: name.trim(),
-      category: category,
-      members: members,
-      inviteCode: generateInviteCode(),
-    );
-    await _write(
-      doc.set({
-        'name': group.name,
-        'category': category.name,
-        'inviteCode': group.inviteCode,
-        'createdBy': uid,
-        'memberIds': [uid],
-        'members': [for (final m in members) m.toMap()],
-        'totalCents': 0,
-        'expenseCount': 0,
-        'unpaidCount': 0,
-        // The server fills in its own clock time (phones' clocks can be wrong).
-        'createdAt': FieldValue.serverTimestamp(),
-      }),
-    );
-    return group;
+    final members = [
+      appUserPerson(
+        uid,
+        AuthService.instance.displayName,
+        role: 'Group creator',
+      ),
+      ...others,
+    ];
+
+    // Try up to 3 invite codes: if a code is already taken by another
+    // group, the rules reject the invite write and we pick a new code.
+    for (var attempt = 1; ; attempt++) {
+      final code = generateInviteCode();
+      // A batch saves the group AND its invite together: both or neither.
+      final batch = _db.batch()
+        ..set(doc, {
+          'name': name.trim(),
+          'category': category.name,
+          'inviteCode': code,
+          'createdBy': uid,
+          'memberIds': [uid],
+          'members': [for (final m in members) m.toMap()],
+          'totalCents': 0,
+          'expenseCount': 0,
+          'unpaidCount': 0,
+          // The server fills in its own time (phones' clocks can be wrong).
+          'createdAt': FieldValue.serverTimestamp(),
+        })
+        ..set(_invites.doc(code), {
+          'groupId': doc.id,
+          'groupName': name.trim(),
+          'createdBy': uid,
+        });
+      try {
+        await _waitForServer(batch.commit());
+        return Group(
+          id: doc.id,
+          name: name.trim(),
+          category: category,
+          members: members,
+          inviteCode: code,
+          createdBy: uid,
+        );
+      } on FirebaseException catch (e) {
+        final codeTaken = e.code == 'permission-denied' && attempt < 3;
+        if (!codeTaken) throw _toFailure(e);
+      }
+    }
   }
 
   @override
-  Future<void> addGuest(String groupId, String name) {
-    final guest = personFromName(name);
-    final withId = Person(
-      guest.name,
-      guest.initials,
-      guest.color,
-      guest.pay,
-      guest.status,
+  Future<void> addGuest(String groupId, String name) async {
+    final guest = personFromName(
+      name,
       id: 'guest-${DateTime.now().millisecondsSinceEpoch}',
     );
-    // arrayUnion adds to the list on the server without overwriting
-    // members that someone else added at the same moment.
-    return _write(
-      _groups.doc(groupId).update({
-        'members': FieldValue.arrayUnion([withId.toMap()]),
-      }),
-    );
+    try {
+      // arrayUnion adds to the list on the server without overwriting
+      // members that someone else added at the same moment.
+      await _waitForServer(
+        _groups.doc(groupId).update({
+          'members': FieldValue.arrayUnion([guest.toMap()]),
+        }),
+      );
+    } on FirebaseException catch (e) {
+      throw _toFailure(e);
+    }
+  }
+
+  @override
+  Future<String> joinGroup(String code, String yourName) async {
+    final uid = _uid;
+    try {
+      // 1) Find the group. Anyone signed in may read invites/{code}, but
+      //    only if they know the code (listing all invites is blocked).
+      final invite = await _invites.doc(code).get().timeout(serverTimeout);
+      if (!invite.exists) {
+        throw GroupFailure(
+          'No group found with code $code. Check the code and try again.',
+        );
+      }
+      final groupId = invite.data()!['groupId'] as String;
+
+      // 2) Already a member? Then the rules let us read the group.
+      if (await _canRead(groupId)) return groupId;
+
+      // 3) Join: add my ID and my name card. The rules only allow this
+      //    exact change, and only with the right code in lastJoinCode.
+      final me = appUserPerson(uid, yourName);
+      await _waitForServer(
+        _groups.doc(groupId).update({
+          'memberIds': FieldValue.arrayUnion([uid]),
+          'members': FieldValue.arrayUnion([me.toMap()]),
+          'lastJoinCode': code,
+        }),
+      );
+      return groupId;
+    } on TimeoutException {
+      throw const GroupFailure(
+        "Can't reach the server. Check your internet connection.",
+      );
+    } on FirebaseException catch (e) {
+      throw _toFailure(e);
+    }
+  }
+
+  @override
+  Future<void> ensureInvite(Group group) async {
+    // Only the creator may publish the code (see firestore.rules).
+    if (group.inviteCode.isEmpty ||
+        group.createdBy != AuthService.instance.uid) {
+      return;
+    }
+    try {
+      await _invites.doc(group.inviteCode).set({
+        'groupId': group.id,
+        'groupName': group.name,
+        'createdBy': group.createdBy,
+      });
+    } catch (_) {
+      // Not critical: it will be retried the next time Invite is opened.
+    }
   }
 
   // ---------- Helpers ----------
+
+  /// True if the current user may read the group (i.e. is a member).
+  Future<bool> _canRead(String groupId) async {
+    try {
+      final doc = await _groups.doc(groupId).get().timeout(serverTimeout);
+      return doc.exists;
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') return false; // not a member yet
+      rethrow;
+    }
+  }
 
   /// Converts a Firestore document into a [Group].
   Group _groupFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -152,6 +246,7 @@ class FirestoreGroupService implements GroupService {
       category: categoryNamed(data['category'] as String? ?? 'Custom'),
       members: members,
       inviteCode: data['inviteCode'] as String? ?? '',
+      createdBy: data['createdBy'] as String? ?? '',
       totalCents: (data['totalCents'] as num?)?.toInt() ?? 0,
       expenseCount: (data['expenseCount'] as num?)?.toInt() ?? 0,
       unpaidCount: (data['unpaidCount'] as num?)?.toInt() ?? 0,
@@ -162,16 +257,14 @@ class FirestoreGroupService implements GroupService {
   /// Waits for a write to reach the server.
   ///
   /// Firestore saves writes on the phone first and syncs them later, so if
-  /// the server is slow or offline we stop waiting after [writeTimeout]:
+  /// the server is slow or offline we stop waiting after [serverTimeout]:
   /// the change is already visible in the app and will upload on its own.
-  /// Real errors (e.g. permission denied) become a [GroupFailure].
-  Future<void> _write(Future<void> write) async {
+  /// Real errors (e.g. permission denied) are rethrown for the caller.
+  Future<void> _waitForServer(Future<void> write) async {
     try {
-      await write.timeout(writeTimeout);
+      await write.timeout(serverTimeout);
     } on TimeoutException {
       // Saved locally; Firestore will sync it when the connection returns.
-    } on FirebaseException catch (e) {
-      throw _toFailure(e);
     }
   }
 

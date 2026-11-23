@@ -2,8 +2,6 @@
 /// receipt/settle screens that aren't connected to Firestore yet.
 library;
 
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 
 import 'package:bahinko/models/person.dart';
@@ -27,30 +25,6 @@ final you = people.last;
 // TODO(M3/M4): the receipt and settle screens still read this list.
 // Switch them to GroupService.instance.watchGroup(groupId) instead.
 final ValueNotifier<List<Person>> groupMembers = ValueNotifier(people);
-
-const memberColors = [green, orange, purple, deep, Color(0xFF5ED38A)];
-
-/// Builds a new guest [Person] from a typed name: initials from the first
-/// and last word ("Rico Santos" → "RS"), and a color from [memberColors].
-Person personFromName(String name, {int? colorIndex}) {
-  final normalizedName = name.trim();
-  final nameParts = normalizedName.split(RegExp(r'\s+'));
-  final initials = nameParts.length > 1
-      ? '${nameParts.first[0]}${nameParts.last[0]}'
-      : nameParts.first.substring(0, min(2, nameParts.first.length));
-  // Same name → same color, so a person looks the same on every phone.
-  // (Sum of character codes: unlike hashCode, it's the same on every device.)
-  final index =
-      colorIndex ?? normalizedName.codeUnits.fold<int>(0, (a, b) => a + b);
-  final color = memberColors[index % memberColors.length];
-  return Person(
-    normalizedName,
-    initials.toUpperCase(),
-    color,
-    'Guest',
-    'Settled',
-  );
-}
 
 // ---------- Receipt sample ----------
 

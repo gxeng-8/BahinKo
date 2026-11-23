@@ -1,11 +1,13 @@
-/// Signs the user in with Firebase Authentication (anonymous for now).
+/// Signs the user in with Firebase Authentication (anonymous for now) and
+/// stores the name friends see in groups.
 ///
 /// Screens call this service instead of FirebaseAuth directly, so the
 /// sign-in method can change later (e.g. email) without touching any screen.
 ///
-/// Why anonymous? No email or password is collected: the minimum personal
-/// data needed, in line with the Data Privacy Act (RA 10173). Firebase keeps
-/// the session on the device, so returning users stay signed in.
+/// Why anonymous? No email or password is collected: only a first name,
+/// the minimum personal data needed, in line with the Data Privacy Act
+/// (RA 10173). Firebase keeps the session on the device, so returning
+/// users stay signed in.
 library;
 
 import 'dart:async';
@@ -13,21 +15,30 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class AuthService {
-  AuthService._();
+  AuthService();
 
-  /// One shared instance for the whole app (singleton).
-  static final instance = AuthService._();
+  /// The service the whole app uses. Tests replace it with a fake
+  /// (see test/onboarding_test.dart), because they can't use Firebase.
+  static AuthService instance = AuthService();
 
   /// How long to wait for Firebase before giving up.
   static const timeout = Duration(seconds: 15);
 
-  final _auth = FirebaseAuth.instance;
+  /// A getter (not a field) so creating an AuthService doesn't touch
+  /// Firebase until it's actually used.
+  FirebaseAuth get _auth => FirebaseAuth.instance;
 
   /// The signed-in user's ID, or null if nobody is signed in.
   /// Firestore uses this to know whose groups are whose.
   String? get uid => _auth.currentUser?.uid;
 
   bool get isSignedIn => uid != null;
+
+  /// The name friends see in groups ("Renz"), or null if not set yet.
+  String? get displayName {
+    final name = _auth.currentUser?.displayName?.trim();
+    return (name == null || name.isEmpty) ? null : name;
+  }
 
   /// Waits until Firebase has restored a saved sign-in from the device.
   ///
@@ -55,17 +66,35 @@ class AuthService {
         'Taking too long. Check your internet and try again.',
       );
     } on FirebaseAuthException catch (e) {
-      throw AuthFailure(
-        e.code == 'network-request-failed'
-            ? 'No internet connection. Connect and try again.'
-            : "Couldn't sign in. Please try again.",
+      throw _toFailure(e);
+    }
+  }
+
+  /// Saves the user's name on their Firebase account.
+  Future<void> setDisplayName(String name) async {
+    final user = _auth.currentUser;
+    if (user == null) throw const AuthFailure('Please sign in first.');
+    try {
+      await user.updateDisplayName(name.trim()).timeout(timeout);
+      await user.reload(); // refresh currentUser so displayName is updated
+    } on TimeoutException {
+      throw const AuthFailure(
+        'Taking too long. Check your internet and try again.',
       );
+    } on FirebaseAuthException catch (e) {
+      throw _toFailure(e);
     }
   }
 
   /// Signs out. With anonymous accounts this loses the user's data link,
   /// so the Profile screen should warn before calling it.
   Future<void> signOut() => _auth.signOut();
+
+  AuthFailure _toFailure(FirebaseAuthException e) => AuthFailure(
+    e.code == 'network-request-failed'
+        ? 'No internet connection. Connect and try again.'
+        : 'Something went wrong. Please try again.',
+  );
 }
 
 /// Error with a message that's safe to show to the user.

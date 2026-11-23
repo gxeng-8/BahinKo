@@ -3,10 +3,12 @@
 /// The same screen handles three modes:
 /// * create  – first time: "Create a PIN"
 /// * confirm – type it again to make sure it matches
-/// * unlock  – returning user: "Welcome back"
+/// * unlock  – returning user: "Welcome back" (+ fingerprint if available)
 ///
 /// Validation feedback: mismatched PINs, wrong PIN with tries left, and a
-/// 30-second pause after too many wrong tries.
+/// 30-second pause after too many wrong tries (saved, so restarting the app
+/// doesn't skip it). The PIN is stored only as a salted hash: see
+/// AppLockService.
 library;
 
 import 'dart:async';
@@ -15,6 +17,8 @@ import 'package:flutter/material.dart';
 
 import 'package:bahinko/screens/shell.dart';
 import 'package:bahinko/services/app_lock_service.dart';
+import 'package:bahinko/services/biometric_service.dart';
+import 'package:bahinko/services/settings_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/widgets/app_toast.dart';
@@ -22,7 +26,15 @@ import 'package:bahinko/widgets/app_toast.dart';
 enum _LockMode { create, confirm, unlock }
 
 class AppLockScreen extends StatefulWidget {
-  const AppLockScreen({super.key});
+  const AppLockScreen({super.key, this.popOnUnlock = false});
+
+  /// True when shown on top of the app after it was in the background:
+  /// unlocking just closes this screen, and Back can't skip it.
+  final bool popOnUnlock;
+
+  /// True while any lock screen is open (so the app never stacks two).
+  static bool get isShowing => _openCount > 0;
+  static int _openCount = 0;
 
   @override
   State<AppLockScreen> createState() => _AppLockScreenState();
@@ -32,37 +44,57 @@ class _AppLockScreenState extends State<AppLockScreen> {
   static const _pinLength = 4;
   final _lock = AppLockService.instance;
 
-  /// null while we ask the service whether a PIN exists (loading state).
+  /// null while we check storage for a saved PIN (loading state).
   _LockMode? _mode;
   String _entered = '';
   String _firstPin = ''; // remembered between "create" and "confirm"
   String? _error;
-  bool _lockedOut = false;
-  Timer? _lockoutTimer;
+
+  /// Seconds left in a lockout (null = not locked out).
+  int? _lockSeconds;
+  Timer? _countdown;
+
+  /// Whether to offer fingerprint unlock on this device.
+  bool _canUseFingerprint = false;
 
   @override
   void initState() {
     super.initState();
-    _loadMode();
+    AppLockScreen._openCount++;
+    _load();
   }
 
   @override
   void dispose() {
-    _lockoutTimer?.cancel(); // stop the timer if the screen closes
+    AppLockScreen._openCount--;
+    _countdown?.cancel(); // stop the timer if the screen closes
     super.dispose();
   }
 
-  /// Async: checks storage for a saved PIN, then picks the mode.
-  Future<void> _loadMode() async {
+  /// Async start-up: is there a saved PIN? a running lockout? fingerprint?
+  Future<void> _load() async {
     final hasPin = await _lock.hasPin();
+    final remaining = await _lock.lockoutRemaining();
+    final fingerprint =
+        hasPin &&
+        SettingsService.instance.useFingerprint &&
+        await BiometricService.instance.isAvailable();
     if (!mounted) return;
-    setState(() => _mode = hasPin ? _LockMode.unlock : _LockMode.create);
+    setState(() {
+      _mode = hasPin ? _LockMode.unlock : _LockMode.create;
+      _canUseFingerprint = fingerprint;
+    });
+    if (remaining != null) {
+      _startLockout(remaining);
+    } else if (fingerprint) {
+      _onFingerprint(); // offer fingerprint right away, like banking apps
+    }
   }
 
   // ---------- Keypad input ----------
 
   void _onDigit(String digit) {
-    if (_lockedOut || _entered.length == _pinLength) return;
+    if (_lockSeconds != null || _entered.length == _pinLength) return;
     setState(() {
       _entered += digit;
       _error = null;
@@ -95,52 +127,68 @@ class _AppLockScreenState extends State<AppLockScreen> {
           });
           return;
         }
-        await _lock.setPin(_entered);
-        _openApp('PIN set. Your balances are protected.');
+        await _lock.setPin(_entered); // saved as salt + hash
+        _unlocked('PIN set. Your balances are protected.');
       case _LockMode.unlock:
-        if (await _lock.verify(_entered)) {
-          _openApp(null);
-        } else {
-          _wrongPin();
+        final result = await _lock.verify(_entered);
+        if (!mounted) return;
+        switch (result) {
+          case PinCorrect():
+            _unlocked(null);
+          case PinWrong(:final attemptsLeft):
+            setState(() {
+              _entered = '';
+              _error =
+                  'Incorrect PIN. $attemptsLeft '
+                  '${attemptsLeft == 1 ? 'try' : 'tries'} left.';
+            });
+          case PinLockedOut(:final remaining):
+            setState(() => _entered = '');
+            _startLockout(remaining);
         }
     }
   }
 
-  void _wrongPin() {
-    final left = _lock.attemptsLeft;
-    setState(() {
-      _entered = '';
-      _error = left > 0
-          ? 'Incorrect PIN. $left ${left == 1 ? 'try' : 'tries'} left.'
-          : 'Too many tries. Wait 30 seconds.';
-    });
-    if (left <= 0) {
-      setState(() => _lockedOut = true);
-      _lockoutTimer = Timer(const Duration(seconds: 30), () {
-        _lock.resetAttempts();
-        if (mounted) {
-          setState(() {
-            _lockedOut = false;
-            _error = null;
-          });
+  /// Disables the keypad and counts down until the lockout ends.
+  void _startLockout(Duration remaining) {
+    _countdown?.cancel();
+    setState(() => _lockSeconds = remaining.inSeconds.clamp(1, 999));
+    _countdown = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return timer.cancel();
+      final left = _lockSeconds! - 1;
+      setState(() {
+        if (left <= 0) {
+          timer.cancel();
+          _lockSeconds = null;
+          _error = null;
+        } else {
+          _lockSeconds = left;
         }
       });
-    }
+    });
   }
 
-  /// Goes to the main app. pushReplacement so Back doesn't return here.
-  void _openApp(String? message) {
+  /// Fingerprint prompt (system dialog). Falls back to the PIN silently.
+  Future<void> _onFingerprint() async {
+    if (_lockSeconds != null) return;
+    final ok = await BiometricService.instance.authenticate();
+    if (ok && mounted) _unlocked(null);
+  }
+
+  /// Leaves the lock screen: closes it (re-lock mode) or opens the app.
+  void _unlocked(String? message) {
     if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const Shell()),
-    );
+    if (widget.popOnUnlock) {
+      Navigator.pop(context);
+    } else {
+      // pushReplacement so Back doesn't return to the lock screen.
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const Shell()),
+      );
+    }
     if (message != null) showAppToast(context, message);
   }
-
-  // BACKEND STEP: replace with local_auth fingerprint check.
-  void _onFingerprint() =>
-      showAppToast(context, 'Fingerprint unlock is coming soon. Use your PIN.');
 
   // ---------- UI ----------
 
@@ -155,78 +203,101 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Loading state while the saved PIN is checked.
+    // Loading state while storage is checked.
     if (_mode == null) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator(color: green)),
       );
     }
     final (title, subtitle) = _texts;
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-          child: Column(
-            children: [
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: mint,
-                  borderRadius: BorderRadius.circular(14),
+    final lockedOut = _lockSeconds != null;
+    final message = lockedOut
+        ? 'Too many tries. Try again in $_lockSeconds s.'
+        : _error;
+    return PopScope(
+      // In re-lock mode, Back must not reveal the app underneath.
+      canPop: !widget.popOnUnlock,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          // Scrolls only when the screen is too short (small phones,
+          // landscape); otherwise the Spacers center everything as usual.
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: IntrinsicHeight(
+                  child: _content(title, subtitle, message, lockedOut),
                 ),
-                child: const Icon(Icons.receipt_long, color: green, size: 28),
               ),
-              const SizedBox(height: 16),
-              Text(title, style: AppText.display(26, color: ink)),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: AppText.caption,
-              ),
-              const SizedBox(height: 20),
-              _PinDots(filled: _entered.length, hasError: _error != null),
-              SizedBox(
-                height: 32,
-                child: _error == null
-                    ? null
-                    : Center(
-                        child: Text(
-                          _error!,
-                          style: const TextStyle(color: errorFg, fontSize: 12),
-                        ),
-                      ),
-              ),
-              const Spacer(),
-              _Keypad(
-                enabled: !_lockedOut,
-                onDigit: _onDigit,
-                onBackspace: _onBackspace,
-                onFingerprint: _mode == _LockMode.unlock
-                    ? _onFingerprint
-                    : null,
-              ),
-              const SizedBox(height: 16),
-              if (_mode == _LockMode.unlock)
-                TextButton(
-                  onPressed: _onFingerprint,
-                  child: const Text(
-                    'Use fingerprint instead',
-                    style: TextStyle(color: green, fontWeight: FontWeight.w700),
-                  ),
-                ),
-              const Text(
-                'App lock keeps your balances private',
-                style: AppText.caption,
-              ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  /// The lock screen's column: logo, title, dots, keypad.
+  Widget _content(
+    String title,
+    String subtitle,
+    String? message,
+    bool lockedOut,
+  ) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+    child: Column(
+      children: [
+        const Spacer(),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: mint,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Icon(Icons.receipt_long, color: green, size: 28),
+        ),
+        const SizedBox(height: 16),
+        Text(title, style: AppText.display(26, color: ink)),
+        const SizedBox(height: 4),
+        Text(subtitle, textAlign: TextAlign.center, style: AppText.caption),
+        const SizedBox(height: 20),
+        _PinDots(filled: _entered.length, hasError: message != null),
+        SizedBox(
+          height: 32,
+          child: message == null
+              ? null
+              : Center(
+                  child: Text(
+                    message,
+                    style: const TextStyle(color: errorFg, fontSize: 12),
+                  ),
+                ),
+        ),
+        const Spacer(),
+        _Keypad(
+          enabled: !lockedOut,
+          onDigit: _onDigit,
+          onBackspace: _onBackspace,
+          onFingerprint: _canUseFingerprint && _mode == _LockMode.unlock
+              ? _onFingerprint
+              : null,
+        ),
+        const SizedBox(height: 16),
+        if (_canUseFingerprint && _mode == _LockMode.unlock)
+          TextButton(
+            onPressed: lockedOut ? null : _onFingerprint,
+            child: const Text(
+              'Use fingerprint instead',
+              style: TextStyle(color: green, fontWeight: FontWeight.w700),
+            ),
+          ),
+        const Text(
+          'App lock keeps your balances private',
+          style: AppText.caption,
+        ),
+      ],
+    ),
+  );
 }
 
 /// Four dots: filled green for each digit typed; red when there's an error.

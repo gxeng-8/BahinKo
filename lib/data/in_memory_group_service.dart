@@ -33,6 +33,7 @@ class InMemoryGroupService implements GroupService {
       category: categoryNamed('Dinner'),
       members: const [], // read live from groupMembers, see [groups]
       inviteCode: 'DJ7Q2',
+      createdBy: myUid,
       totalCents: 295000,
       expenseCount: 2,
       unpaidCount: 3,
@@ -43,6 +44,7 @@ class InMemoryGroupService implements GroupService {
       category: categoryNamed('Boarding'),
       members: people.sublist(1, 5),
       inviteCode: 'BH4K9',
+      createdBy: 'someone-else', // you're not in this one: try joining it
       totalCents: 1200000,
       expenseCount: 1,
       unpaidCount: 1,
@@ -132,8 +134,12 @@ class InMemoryGroupService implements GroupService {
       id: 'group-${DateTime.now().microsecondsSinceEpoch}',
       name: name.trim(),
       category: category,
-      members: [ownerPerson(myUid), ...others],
+      members: [
+        appUserPerson(myUid, null, role: 'Group creator'),
+        ...others,
+      ],
       inviteCode: generateInviteCode(),
+      createdBy: myUid,
       createdAt: DateTime.now(),
     );
     _groups.insert(0, group); // newest first, like Firestore
@@ -157,4 +163,30 @@ class InMemoryGroupService implements GroupService {
     _groups[i] = g.copyWith(members: [...g.members, personFromName(name)]);
     _notifyAll();
   }
+
+  @override
+  Future<String> joinGroup(String code, String yourName) async {
+    final i = _groups.indexWhere((g) => g.inviteCode == code);
+    if (i == -1) {
+      throw GroupFailure(
+        'No group found with code $code. Check the code and try again.',
+      );
+    }
+    final g = groups[i];
+    final alreadyIn = g.members.any((m) => m.id == myUid);
+    if (!alreadyIn) {
+      final me = appUserPerson(myUid, yourName);
+      if (g.id == demoGroupId) {
+        groupMembers.value = [...groupMembers.value, me];
+      } else {
+        _groups[i] = g.copyWith(members: [...g.members, me]);
+        _notifyAll();
+      }
+    }
+    return g.id;
+  }
+
+  /// Nothing to publish: codes are looked up directly in memory.
+  @override
+  Future<void> ensureInvite(Group group) async {}
 }

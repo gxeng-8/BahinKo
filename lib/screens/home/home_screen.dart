@@ -8,6 +8,7 @@ import 'package:bahinko/models/group.dart';
 import 'package:bahinko/screens/bill/manual_receipt_entry_screen.dart';
 import 'package:bahinko/screens/group/create_group_screen.dart';
 import 'package:bahinko/screens/group/group_detail_screen.dart';
+import 'package:bahinko/screens/group/join_group_screen.dart';
 import 'package:bahinko/screens/history/activity_history_screen.dart';
 import 'package:bahinko/screens/scan/scan_receipt_screen.dart';
 import 'package:bahinko/screens/settle/settle_up_screen.dart';
@@ -69,6 +70,14 @@ class Home extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text('Active Groups', style: AppText.section),
+                  ),
+                  TextButton(
+                    onPressed: () => go(context, const JoinGroupScreen()),
+                    style: TextButton.styleFrom(
+                      foregroundColor: green,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: const Text('Join'),
                   ),
                   TextButton.icon(
                     onPressed: () => go(context, const CreateGroup()),

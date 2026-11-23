@@ -13,7 +13,7 @@ library;
 
 import 'package:flutter/material.dart';
 
-import 'package:bahinko/screens/auth/app_lock_screen.dart';
+import 'package:bahinko/screens/auth/your_name_screen.dart';
 import 'package:bahinko/services/auth_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
@@ -44,8 +44,8 @@ class _OnboardingState extends State<Onboarding> {
   /// and is disabled so a double tap can't sign in twice.
   bool _loading = false;
 
-  /// Signs in, then opens the PIN screen. On failure, shows the error and
-  /// re-enables the button so the user can retry.
+  /// Signs in, then asks for the user's name (then the PIN). On failure,
+  /// shows the error and re-enables the button so the user can retry.
   Future<void> _getStarted() async {
     setState(() => _loading = true);
     try {
@@ -56,7 +56,7 @@ class _OnboardingState extends State<Onboarding> {
       // pushReplacement: users can't go "back" to onboarding.
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const AppLockScreen()),
+        MaterialPageRoute(builder: (_) => const YourNameScreen()),
       );
     } on AuthFailure catch (e) {
       if (!mounted) return;

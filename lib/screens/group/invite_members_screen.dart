@@ -13,6 +13,7 @@ import 'package:bahinko/models/person.dart';
 import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
+import 'package:bahinko/utils/validators.dart';
 import 'package:bahinko/widgets/app_page.dart';
 import 'package:bahinko/widgets/app_toast.dart';
 import 'package:bahinko/widgets/async_state_view.dart';
@@ -45,6 +46,13 @@ class _InviteMembersState extends State<InviteMembers> {
   void initState() {
     super.initState();
     _group = GroupService.instance.watchGroup(widget.groupId);
+    // Make sure this group's code can be looked up by people joining
+    // (groups made before invite codes existed don't have it yet).
+    GroupService.instance
+        .watchGroup(widget.groupId)
+        .first
+        .then(GroupService.instance.ensureInvite)
+        .catchError((_) {}); // not critical; retried next time
   }
 
   @override
@@ -79,16 +87,13 @@ class _InviteMembersState extends State<InviteMembers> {
     }
   }
 
-  /// Guest name: required, 2–30 characters, letters/spaces/.-' only,
-  /// and not already in the group.
+  /// Guest name: a valid name (see validatePersonName) that isn't
+  /// already in the group.
   String? _validateGuest(String? value) {
-    final name = value?.trim() ?? '';
-    if (name.isEmpty) return "Enter the guest's name";
-    if (name.length < 2) return 'Name is too short';
-    if (name.length > 30) return 'Keep it under 30 characters';
-    if (!RegExp(r"^[A-Za-zÀ-ÿñÑ .'-]+$").hasMatch(name)) {
-      return 'Use letters only';
-    }
+    if ((value ?? '').trim().isEmpty) return "Enter the guest's name";
+    final error = validatePersonName(value);
+    if (error != null) return error;
+    final name = value!.trim();
     final taken = (_latest?.members ?? const <Person>[]).any(
       (p) => p.name.toLowerCase() == name.toLowerCase(),
     );
