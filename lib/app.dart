@@ -3,7 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:bahinko/screens/onboarding/onboarding_screen.dart';
-import 'package:bahinko/theme/app_colors.dart';
+import 'package:bahinko/theme/app_theme.dart';
 
 class BahinKoApp extends StatelessWidget {
   const BahinKoApp({super.key});
@@ -12,11 +12,7 @@ class BahinKoApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
     title: 'BahinKo',
-    theme: ThemeData(
-      colorSchemeSeed: green,
-      useMaterial3: true,
-      scaffoldBackgroundColor: const Color(0xFFF8FAF9),
-    ),
+    theme: buildAppTheme(), // colors, fonts, inputs: see theme/app_theme.dart
     builder: (context, child) => LayoutBuilder(
       builder: (context, constraints) {
         final appWidth = constraints.maxWidth < 430
