@@ -20,8 +20,14 @@ List<(String, int)> parseReceiptItems(String text) {
     name = name.replaceFirst(RegExp(r'^[-•\d.\s]+'), '').trim();
     if (name.isEmpty || excludedNames.hasMatch(name)) continue;
 
-    final amountText = match.group(1)!.replaceAll(',', '');
-    final amount = (double.tryParse(amountText) ?? 0).round();
+    final amountParts = match.group(1)!.replaceAll(',', '').split('.');
+    final wholePesos = int.tryParse(amountParts.first);
+    final centavos = amountParts.length == 1
+        ? 0
+        : int.tryParse(amountParts.last.padRight(2, '0'));
+    if (wholePesos == null || centavos == null) continue;
+
+    final amount = wholePesos * 100 + centavos;
     if (amount > 0) items.add((name, amount));
   }
 

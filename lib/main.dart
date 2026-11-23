@@ -13,27 +13,45 @@ import 'widgets/box.dart';
 import 'widgets/pill.dart';
 import 'widgets/btn.dart';
 import 'utils/navigation.dart';
-import 'widgets/app_page.dart';
+import 'utils/receipt_ocr.dart';
+import 'utils/receipt_parser.dart';
 
 void main() => runApp(const BahinKoApp());
 
 // ---------- Theme colors ----------
-
 
 class BahinKoApp extends StatelessWidget {
   const BahinKoApp({super.key});
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        debugShowCheckedModeBanner: false,
-        title: 'BahinKo',
-        theme: ThemeData(
-          colorSchemeSeed: green,
-          useMaterial3: true,
-          scaffoldBackgroundColor: const Color(0xFFF8FAF9),
-        ),
-        home: const Onboarding(),
-      );
+    debugShowCheckedModeBanner: false,
+    title: 'BahinKo',
+    theme: ThemeData(
+      colorSchemeSeed: green,
+      useMaterial3: true,
+      scaffoldBackgroundColor: const Color(0xFFF8FAF9),
+    ),
+    builder: (context, child) => LayoutBuilder(
+      builder: (context, constraints) {
+        final appWidth = constraints.maxWidth < 430
+            ? constraints.maxWidth
+            : 430.0;
+
+        return ColoredBox(
+          color: const Color(0xFFEFF3F1),
+          child: Center(
+            child: SizedBox(
+              width: appWidth,
+              height: constraints.maxHeight,
+              child: child,
+            ),
+          ),
+        );
+      },
+    ),
+    home: const Onboarding(),
+  );
 }
 
 // ---------- Mock data (edit freely) ----------
@@ -46,25 +64,93 @@ const people = [
   Person('You', 'YO', Color(0xFF5ED38A), 'GCash', 'Owes ₱490'),
 ];
 
+final ValueNotifier<List<Person>> groupMembers = ValueNotifier(people);
+
+const _memberColors = [green, orange, purple, deep, Color(0xFF5ED38A)];
+
+void _addMember(String name) {
+  final normalizedName = name.trim();
+  final nameParts = normalizedName.split(RegExp(r'\s+'));
+  final initials = nameParts.length > 1
+      ? '${nameParts.first[0]}${nameParts.last[0]}'
+      : nameParts.first.substring(
+          0,
+          nameParts.first.length < 2 ? nameParts.first.length : 2,
+        );
+  final color = _memberColors[groupMembers.value.length % _memberColors.length];
+  groupMembers.value = [
+    ...groupMembers.value,
+    Person(normalizedName, initials.toUpperCase(), color, 'Guest', 'Unpaid'),
+  ];
+}
+
+class ReceiptLineItem {
+  const ReceiptLineItem(this.name, this.amountInCents);
+
+  final String name;
+  final int amountInCents;
+}
+
 const items = [
-  ('Pork Belly set', 890),
-  ('Rice x5', 250),
-  ('Iced Tea x2', 300),
-  ('Soju', 420),
-  ('Service and tax', 590),
+  ReceiptLineItem('Pork Belly set', 89000),
+  ReceiptLineItem('Rice x5', 25000),
+  ReceiptLineItem('Iced Tea x2', 30000),
+  ReceiptLineItem('Soju', 42000),
+  ReceiptLineItem('Service and tax', 59000),
 ];
 
-const shares = [490, 610, 520, 430, 400];
+const shares = [49000, 61000, 52000, 43000, 40000];
+
+int? _parsePesosToCents(String value) {
+  final trimmed = value.trim();
+  if (!RegExp(r'^\d*\.?\d{0,2}$').hasMatch(trimmed) ||
+      trimmed.isEmpty ||
+      trimmed == '.') {
+    return null;
+  }
+
+  final parts = trimmed.split('.');
+  final wholePesos = parts.first.isEmpty ? 0 : int.tryParse(parts.first);
+  if (wholePesos == null || wholePesos > 9000000000000) return null;
+
+  final centavos = parts.length == 1 || parts.last.isEmpty
+      ? 0
+      : int.tryParse(parts.last.padRight(2, '0'));
+  if (centavos == null) return null;
+  return wholePesos * 100 + centavos;
+}
+
+String _formatCurrency(int amountInCents) {
+  final pesos = amountInCents ~/ 100;
+  final centavos = amountInCents % 100;
+  return centavos == 0
+      ? '₱$pesos'
+      : '₱$pesos.${centavos.toString().padLeft(2, '0')}';
+}
 
 void go(BuildContext c, Widget w) =>
     Navigator.push(c, MaterialPageRoute(builder: (_) => w));
 
-List<int> _splitEqually(int amount, int count) {
-  final perPerson = amount ~/ count;
-  final remainder = amount % count;
-  return List.generate(
-    count,
-    (index) => perPerson + (index < remainder ? 1 : 0),
+String _formatShareRange(int totalInCents, int count) {
+  final lowestShare = totalInCents ~/ count;
+  final highestShare = lowestShare + (totalInCents % count == 0 ? 0 : 1);
+  if (lowestShare == highestShare) return _formatCurrency(lowestShare);
+  return '${_formatCurrency(lowestShare)}–${_formatCurrency(highestShare)}';
+}
+
+List<int> _calculateMemberShares(
+  int totalInCents,
+  int memberCount, {
+  bool useSampleShares = false,
+}) {
+  if (memberCount <= 0) return const [];
+  if (useSampleShares && memberCount == shares.length) return shares;
+
+  final baseShare = totalInCents ~/ memberCount;
+  final remainder = totalInCents % memberCount;
+  return List<int>.generate(
+    memberCount,
+    (index) => baseShare + (index < remainder ? 1 : 0),
   );
 }
 
@@ -98,10 +184,10 @@ class Onboarding extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
               Container(
-                width: 64,
-                height: 64,
+                width: 56,
+                height: 56,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
@@ -113,7 +199,7 @@ class Onboarding extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
               const Text(
                 'BahinKo',
                 style: TextStyle(
@@ -127,10 +213,10 @@ class Onboarding extends StatelessWidget {
                 'Split bills with friends without the awkward math.',
                 style: TextStyle(color: Colors.white, fontSize: 18),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
               for (final p in perks)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: Row(
                     children: [
                       const Icon(Icons.check_circle, color: Colors.white70),
@@ -213,7 +299,7 @@ class _ShellState extends State<Shell> {
           const SizedBox(width: 48),
           IconButton(
             icon: const Icon(Icons.description_outlined, color: Colors.grey),
-            onPressed: () => go(context, const Members()),
+            onPressed: () => go(context, const PersonalLedger()),
           ),
           IconButton(
             icon: const Icon(Icons.person_outline, color: Colors.grey),
@@ -308,7 +394,7 @@ class Home extends StatelessWidget {
                         context,
                         Icons.history,
                         'History',
-                        const SplitSummary(),
+                        const ActivityHistory(),
                       ),
                     ],
                   ),
@@ -324,15 +410,24 @@ class Home extends StatelessWidget {
                   physics: const NeverScrollableScrollPhysics(),
                   children: [
                     for (final c in cats)
-                      Column(
-                        children: [
-                          CircleAvatar(
-                            backgroundColor: mint,
-                            child: Icon(c.$2, color: green),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(c.$1, style: const TextStyle(fontSize: 11)),
-                        ],
+                      InkWell(
+                        onTap: () {
+                          if (c.$1 == 'Subscriptions') {
+                            go(context, const RecurringBills());
+                          } else if (c.$1 == 'Bills') {
+                            go(context, const PersonalLedger());
+                          }
+                        },
+                        child: Column(
+                          children: [
+                            CircleAvatar(
+                              backgroundColor: mint,
+                              child: Icon(c.$2, color: green),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(c.$1, style: const TextStyle(fontSize: 11)),
+                          ],
+                        ),
                       ),
                   ],
                 ),
@@ -470,24 +565,27 @@ class GroupDetail extends StatelessWidget {
         ),
         Box(
           onTap: () => go(context, const Members()),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Members',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  for (final p in people)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Avatar(p),
-                    ),
-                ],
-              ),
-            ],
+          ValueListenableBuilder<List<Person>>(
+            valueListenable: groupMembers,
+            builder: (context, currentMembers, _) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Members (${currentMembers.length})',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    for (final p in currentMembers)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Avatar(p),
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
         const Text('Expenses', style: TextStyle(fontWeight: FontWeight.w800)),
@@ -558,11 +656,11 @@ class ScanReceipt extends StatelessWidget {
                     ),
                     for (final i in items)
                       Text(
-                        '${i.$1}   ₱${i.$2}',
+                        '${i.name}   ${_formatCurrency(i.amountInCents)}',
                         style: const TextStyle(fontSize: 12),
                       ),
-                    const Text(
-                      'TOTAL   2,450',
+                    Text(
+                      'TOTAL   ${_formatCurrency(items.fold<int>(0, (sum, item) => sum + item.amountInCents))}',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
@@ -609,7 +707,7 @@ class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
 
   int get _total => _lines.fold(
     0,
-    (total, line) => total + (int.tryParse(line.price.text.trim()) ?? 0),
+    (total, line) => total + (_parsePesosToCents(line.price.text) ?? 0),
   );
 
   @override
@@ -633,7 +731,12 @@ class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
     if (!_formKey.currentState!.validate()) return;
 
     final receiptItems = _lines
-        .map((line) => (line.name.text.trim(), int.parse(line.price.text.trim())))
+        .map(
+          (line) => ReceiptLineItem(
+            line.name.text.trim(),
+            _parsePesosToCents(line.price.text)!,
+          ),
+        )
         .toList();
     final storeName = _storeController.text.trim();
     go(
@@ -687,7 +790,7 @@ class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  '₱$_total',
+                  _formatCurrency(_total),
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
@@ -728,18 +831,20 @@ class _ManualReceiptEntryState extends State<ManualReceiptEntry> {
           child: TextFormField(
             key: ValueKey('receipt-item-price-$index'),
             controller: line.price,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               labelText: 'Price (₱)',
-              helperText: 'Whole pesos',
+              helperText: 'Up to 2 decimal places',
               border: OutlineInputBorder(),
             ),
             onChanged: (_) => setState(() {}),
             validator: (value) {
-              final amount = int.tryParse(value?.trim() ?? '');
-              if (amount == null) return 'Enter a price';
-              if (amount <= 0) return 'Price must be over ₱0';
+              if (value == null || value.trim().isEmpty) {
+                return 'Enter a price';
+              }
+              final amount = _parsePesosToCents(value);
+              if (amount == null) return 'Enter a valid price (max 2 decimals)';
+              if (amount <= 0) return 'Must be over ₱0';
               return null;
             },
           ),
@@ -775,10 +880,13 @@ class _CameraCaptureState extends State<CameraCapture>
     with WidgetsBindingObserver {
   CameraController? _controller;
   Uint8List? _capturedImage;
+  String? _capturedImagePath;
   String? _cameraError;
   String? _cameraHelp;
+  String? _scanError;
   bool _initializing = false;
   bool _capturing = false;
+  bool _processing = false;
   bool _isActive = true;
   bool _resumeRequested = false;
 
@@ -860,7 +968,10 @@ class _CameraCaptureState extends State<CameraCapture>
       setState(() {
         _controller = null;
         _capturedImage = bytes;
+        _capturedImagePath = image.path;
+        _processing = true;
       });
+      await _recognizeReceipt(image.path);
     } on CameraException catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -871,8 +982,50 @@ class _CameraCaptureState extends State<CameraCapture>
           ),
         );
       }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _scanError = 'Could not process the photo: $error';
+          _processing = false;
+        });
+      }
     } finally {
       if (mounted) setState(() => _capturing = false);
+    }
+  }
+
+  Future<void> _recognizeReceipt(String path) async {
+    try {
+      final text = await recognizeReceiptText(path);
+      final parsedItems = parseReceiptItems(text ?? '');
+      if (!mounted) return;
+
+      if (parsedItems.isEmpty) {
+        setState(() {
+          _scanError = 'No receipt items were recognized. Try another photo or enter them manually.';
+          _processing = false;
+        });
+        return;
+      }
+
+      setState(() => _processing = false);
+      go(
+        context,
+        AssignItems(
+          receiptItems: [
+            for (final (name, amountInCents) in parsedItems)
+              ReceiptLineItem(name, amountInCents),
+          ],
+          storeName: 'Scanned Receipt',
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _scanError = 'Receipt recognition failed: $error';
+          _processing = false;
+        });
+      }
     }
   }
 
@@ -975,22 +1128,35 @@ class _CameraCaptureState extends State<CameraCapture>
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            'Photo captured. Receipt text recognition is not wired up yet.',
-            textAlign: TextAlign.center,
-          ),
+          if (_processing)
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 10),
+                Text('Reading receipt...'),
+              ],
+            )
+          else if (_scanError != null)
+            Text(_scanError!, textAlign: TextAlign.center),
           const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _initializing
+                  onPressed: _initializing || _processing
                       ? null
                       : () {
                           setState(() {
                             _capturedImage = null;
+                            _capturedImagePath = null;
                             _cameraError = null;
                             _cameraHelp = null;
+                            _scanError = null;
                           });
                           unawaited(_initializeCamera());
                         },
@@ -998,13 +1164,34 @@ class _CameraCaptureState extends State<CameraCapture>
                   label: const Text('Retake'),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => go(context, const AssignItems()),
-                  child: const Text('Continue to items'),
+              if (_scanError != null) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _processing
+                        ? null
+                        : () {
+                            final path = _capturedImagePath;
+                            if (path == null) return;
+                            setState(() {
+                              _scanError = null;
+                              _processing = true;
+                            });
+                            unawaited(_recognizeReceipt(path));
+                          },
+                    child: const Text('Retry scan'),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _processing
+                        ? null
+                        : () => go(context, const ManualReceiptEntry()),
+                    child: const Text('Enter manually'),
+                  ),
+                ),
+              ],
             ],
           ),
         ],
@@ -1072,13 +1259,17 @@ class AssignItems extends StatelessWidget {
     this.storeName = 'Samgyup House',
   });
 
-  final List<(String, int)>? receiptItems;
+  final List<ReceiptLineItem>? receiptItems;
   final String storeName;
 
   @override
   Widget build(BuildContext context) {
     final displayItems = receiptItems ?? items;
-    final total = displayItems.fold<int>(0, (sum, item) => sum + item.$2);
+    final numberOfPeople = groupMembers.value.length;
+    final total = displayItems.fold<int>(
+      0,
+      (sum, item) => sum + item.amountInCents,
+    );
 
     // who ordered each item (indexes into `people`); empty list = split equally
     const who = [
@@ -1105,7 +1296,9 @@ class AssignItems extends StatelessWidget {
                   '1 needs review',
                   bg: Color(0xFFFFF3D6),
                   fg: Color(0xFFB7791F),
-                ),
+                )
+              else
+                Pill('$numberOfPeople people'),
             ],
           ),
           const SizedBox(height: 12),
@@ -1118,10 +1311,10 @@ class AssignItems extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          displayItems[i].$1,
+                          displayItems[i].name,
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        Text('₱${displayItems[i].$2}'),
+                        Text(_formatCurrency(displayItems[i].amountInCents)),
                       ],
                     ),
                   ),
@@ -1143,27 +1336,37 @@ class AssignItems extends StatelessWidget {
       bottom: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('Total'),
-            Text(
-              '₱$total',
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Total'),
+              Text(
+                _formatCurrency(total),
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
+            ],
+          ),
+          if (receiptItems != null) ...[
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Each person pays'),
+                Text(_formatShareRange(total, numberOfPeople)),
+              ],
             ),
           ],
-        ),
           const SizedBox(height: 8),
-        Btn(
-          'Confirm Split',
-          () => go(
-            context,
-            SplitSummary(receiptItems: receiptItems, storeName: storeName),
+          Btn(
+            'Confirm Split',
+            () => go(
+              context,
+              SplitSummary(receiptItems: receiptItems, storeName: storeName),
+            ),
           ),
-        ),
         ],
       ),
     );
@@ -1178,199 +1381,1465 @@ class SplitSummary extends StatelessWidget {
     this.storeName = 'Samgyup House',
   });
 
-  final List<(String, int)>? receiptItems;
+  final List<ReceiptLineItem>? receiptItems;
   final String storeName;
 
   @override
   Widget build(BuildContext context) {
     final displayItems = receiptItems ?? items;
-    final total = displayItems.fold<int>(0, (sum, item) => sum + item.$2);
-    final personShares = receiptItems == null
-        ? shares
-        : _splitEqually(total, people.length);
+    final currentMembers = groupMembers.value;
+    final numberOfPeople = currentMembers.length;
+    final total = displayItems.fold<int>(
+      0,
+      (sum, item) => sum + item.amountInCents,
+    );
+    final memberShares = _calculateMemberShares(
+      total,
+      numberOfPeople,
+      useSampleShares: receiptItems == null,
+    );
+    String formatAmount(int amountInCents) {
+      final pesos = amountInCents ~/ 100;
+      final centavos = amountInCents % 100;
+      final pesosText = pesos.toString().replaceAllMapped(
+        RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+        (match) => '${match[1]},',
+      );
+      return centavos == 0
+          ? '₱$pesosText'
+          : '₱$pesosText.${centavos.toString().padLeft(2, '0')}';
+    }
 
-    return AppPage(
-      'Split Summary',
-    Box(
-      Column(
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAF9),
+      body: Column(
         children: [
-        Text(
-          storeName,
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-          ),
-          const Text(
-            'Oct 20, 2026 · 5 people',
-            style: TextStyle(color: Colors.grey, fontSize: 12),
-          ),
-          const Divider(),
-          for (final i in displayItems)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [Text(i.$1), Text('₱${i.$2}')],
+          Expanded(
+            child: SingleChildScrollView(
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    height: 178,
+                    width: double.infinity,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xFF159B82), Color(0xFF087D69)],
+                      ),
+                    ),
+                  ),
+                  SafeArea(
+                    bottom: false,
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 14),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              '6  Split Summary',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.75),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.13),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: IconButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  icon: const Icon(
+                                    Icons.chevron_left_rounded,
+                                    color: Colors.white,
+                                    size: 28,
+                                  ),
+                                ),
+                              ),
+                              const Expanded(
+                                child: Text(
+                                  'Split Summary',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.13),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: IconButton(
+                                  onPressed: () {},
+                                  icon: const Icon(
+                                    Icons.share_outlined,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(16, 132, 16, 16),
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x18000000),
+                          blurRadius: 12,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Column(
+                            children: [
+                              Text(
+                                storeName,
+                                style: const TextStyle(
+                                  color: Color(0xFF202523),
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                receiptItems == null
+                                    ? 'Oct 20, 2026 · $numberOfPeople people'
+                                    : '$numberOfPeople people sharing',
+                                style: const TextStyle(
+                                  color: Color(0xFF8A9390),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Divider(height: 1, color: Color(0xFFE7ECE9)),
+                        const SizedBox(height: 12),
+                        for (final item in displayItems)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    item.name,
+                                    style: const TextStyle(
+                                      color: Color(0xFF7B8581),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  formatAmount(item.amountInCents),
+                                  style: const TextStyle(
+                                    color: Color(0xFF202523),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 2),
+                        const Divider(height: 1, color: Color(0xFFE7ECE9)),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Total',
+                              style: TextStyle(
+                                color: Color(0xFF202523),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            Text(
+                              formatAmount(total),
+                              style: const TextStyle(
+                                color: green,
+                                fontSize: 21,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Each person pays',
+                          style: TextStyle(
+                            color: Color(0xFF202523),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        for (var i = 0; i < currentMembers.length; i++)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                Avatar(currentMembers[i], size: 32),
+                                const SizedBox(width: 10),
+                                Text(
+                                  currentMembers[i].name,
+                                  style: const TextStyle(
+                                    color: Color(0xFF202523),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  formatAmount(memberShares[i]),
+                                  style: const TextStyle(
+                                    color: Color(0xFF202523),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-          const Divider(),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Total', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text(
-                '₱$total',
-                style: TextStyle(
-                  color: green,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
           ),
-          const SizedBox(height: 12),
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Each person pays',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          for (var i = 0; i < people.length; i++)
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Avatar(people[i], size: 32),
-              title: Text(people[i].name),
-              trailing: Text(
-                '₱${personShares[i]}',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+          SafeArea(
+            top: false,
+            child: Container(
+              color: const Color(0xFFF8FAF9),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Btn(
+                    'Settle Up',
+                    () => go(
+                      context,
+                      SettleUp(
+                        receiptItems: receiptItems,
+                        storeName: storeName,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Btn('Download report', () {}, outlined: true),
+                ],
               ),
             ),
+          ),
         ],
       ),
-    ),
-    actions: [IconButton(icon: const Icon(Icons.share), onPressed: () {})],
-    bottom: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Btn('Settle Up', () => go(context, const SettleUp())),
-        const SizedBox(height: 8),
-        Btn('Download report', () {}, outlined: true),
-      ],
-    ),
-  );
+    );
   }
 }
 
 // ---------- 7. Settle Up ----------
-class SettleUp extends StatelessWidget {
-  const SettleUp({super.key});
+class SettleUp extends StatefulWidget {
+  const SettleUp({
+    super.key,
+    this.receiptItems,
+    this.storeName = 'Samgyup House',
+  });
+
+  final List<ReceiptLineItem>? receiptItems;
+  final String storeName;
+
+  @override
+  State<SettleUp> createState() => _SettleUpState();
+}
+
+class _SettleUpState extends State<SettleUp> {
+  final Set<Person> _paidMembers = {};
+
   @override
   Widget build(BuildContext context) => AppPage(
     'Settle Up',
-    Column(
-      children: [
-        const Box(
-          color: lime,
-          Text(
-            '✓ Smart settle: 2 transfers instead of 4',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-        ),
-        Box(
-          Column(
-            children: [
-              const Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    ValueListenableBuilder<List<Person>>(
+      valueListenable: groupMembers,
+      builder: (context, currentMembers, _) {
+        final displayItems = widget.receiptItems ?? items;
+        final total = displayItems.fold<int>(
+          0,
+          (sum, item) => sum + item.amountInCents,
+        );
+        final memberShares = _calculateMemberShares(
+          total,
+          currentMembers.length,
+          useSampleShares: widget.receiptItems == null,
+        );
+        final payerIndex = currentMembers.indexWhere(
+          (member) => member.pay == 'Paid the bill',
+        );
+        final payer = payerIndex < 0 ? null : currentMembers[payerIndex];
+        final transferCount = payer == null ? 0 : currentMembers.length - 1;
+
+        return Column(
+          children: [
+            Box(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'You pay Mia',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    widget.storeName,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('${currentMembers.length} people'),
+                      Text('${displayItems.length} items'),
+                      Text(
+                        _formatCurrency(total),
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   Text(
-                    '₱490',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                    payer == null
+                        ? 'No bill payer is set for this split.'
+                        : '$transferCount payments to ${payer.name}',
+                    style: const TextStyle(color: Colors.black54),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Row(
+            ),
+            if (payer == null)
+              const Box(
+                Text(
+                  'Set a member as the bill payer to calculate settlements.',
+                ),
+              )
+            else
+              for (var i = 0; i < currentMembers.length; i++)
+                if (i != payerIndex)
+                  _settlementCard(
+                    context,
+                    member: currentMembers[i],
+                    payer: payer,
+                    amountInCents: memberShares[i],
+                    memberIndex: i,
+                  ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Payments happen outside BahinKo. Mark a person paid after confirming the transfer.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+            ),
+            TextButton(
+              onPressed: () => go(context, const Privacy()),
+              child: const Text('How we protect your data ›'),
+            ),
+          ],
+        );
+      },
+    ),
+    bottom: Btn('Done', () => Navigator.popUntil(context, (r) => r.isFirst)),
+  );
+
+  Widget _settlementCard(
+    BuildContext context, {
+    required Person member,
+    required Person payer,
+    required int amountInCents,
+    required int memberIndex,
+  }) {
+    final isPaid = _paidMembers.contains(member);
+    return Box(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  '${member.name} pays ${payer.name}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              Text(
+                _formatCurrency(amountInCents),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (!isPaid)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
                 children: [
                   Expanded(
                     child: FilledButton(
-                      // TODO: open GCash with prefilled amount (url_launcher)
-                      onPressed: () {},
+                      key: ValueKey('settle-payment-gcash-$memberIndex'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: green,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: amountInCents == 0
+                          ? null
+                          : () => _openPayment(
+                              context,
+                              member,
+                              payer,
+                              amountInCents,
+                              'GCash',
+                            ),
                       child: const Text('Pay with GCash'),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.black,
-                      ),
-                      onPressed: () {},
-                      child: const Text('Maya'),
+                    child: OutlinedButton(
+                      key: ValueKey('settle-payment-maya-$memberIndex'),
+                      onPressed: amountInCents == 0
+                          ? null
+                          : () => _openPayment(
+                              context,
+                              member,
+                              payer,
+                              amountInCents,
+                              'Maya',
+                            ),
+                      child: const Text('Pay with Maya'),
                     ),
                   ),
                 ],
               ),
-              const Text(
-                'Amount is prefilled. You confirm in the payment app.',
-                style: TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: Pill(
+                  isPaid ? 'Paid' : 'Pending',
+                  bg: isPaid ? mint : const Color(0xFFFFF3D6),
+                  fg: isPaid ? green : const Color(0xFFB7791F),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  key: ValueKey('settle-payment-$memberIndex'),
+                  onPressed: amountInCents == 0
+                      ? null
+                      : () => isPaid
+                            ? setState(() => _paidMembers.remove(member))
+                            : setState(() => _paidMembers.add(member)),
+                  child: Text(isPaid ? 'Undo' : 'Pay with Cash'),
+                ),
               ),
             ],
           ),
-        ),
-        Box(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          if (!isPaid) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                key: ValueKey('send-reminder-$memberIndex'),
+                onPressed: () =>
+                    _openReminder(context, member, payer, amountInCents),
+                icon: const Icon(Icons.notifications_outlined, size: 18),
+                label: const Text('Send reminder'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openPayment(
+    BuildContext context,
+    Person member,
+    Person payer,
+    int amountInCents,
+    String provider,
+  ) async {
+    final completed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _PaymentOpeningDialog(
+        provider: provider,
+        member: member,
+        payer: payer,
+        amountInCents: amountInCents,
+      ),
+    );
+
+    if (completed != true || !context.mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => _PaymentConfirmationDialog(
+        provider: provider,
+        amountInCents: amountInCents,
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final submitted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _PaymentProofDialog(
+        member: member,
+        payer: payer,
+        provider: provider,
+        amountInCents: amountInCents,
+      ),
+    );
+
+    if (submitted == true) {
+      setState(() => _paidMembers.add(member));
+    }
+  }
+
+  Future<void> _openReminder(
+    BuildContext context,
+    Person member,
+    Person payer,
+    int amountInCents,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _ReminderSheet(
+        member: member,
+        payer: payer,
+        amountInCents: amountInCents,
+      ),
+    );
+  }
+}
+
+class _PaymentOpeningDialog extends StatelessWidget {
+  const _PaymentOpeningDialog({
+    required this.provider,
+    required this.member,
+    required this.payer,
+    required this.amountInCents,
+  });
+
+  final String provider;
+  final Person member;
+  final Person payer;
+  final int amountInCents;
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+    insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 4),
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: mint,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const Icon(
+              Icons.account_balance_wallet_outlined,
+              color: green,
+              size: 36,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Opening $provider...',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Hang on, we’re handing you over to the app.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.black54),
+          ),
+          const SizedBox(height: 20),
+          const CircularProgressIndicator(color: green),
+          const SizedBox(height: 20),
+          Text(
+            '${member.name} pays ${payer.name}',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _formatCurrency(amountInCents),
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              key: const ValueKey('continue-payment-confirmation'),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Continue'),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _PaymentConfirmationDialog extends StatelessWidget {
+  const _PaymentConfirmationDialog({
+    required this.provider,
+    required this.amountInCents,
+  });
+
+  final String provider;
+  final int amountInCents;
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+    insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: const BoxDecoration(
+              color: mint,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check, color: green, size: 42),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Did you complete the payment?',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Tell us if the $provider payment is complete.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.black54),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _formatCurrency(amountInCents),
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              key: const ValueKey('payment-confirmed-yes'),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Yes, I paid'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              key: const ValueKey('payment-confirmed-no'),
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not yet'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _PaymentProofDialog extends StatefulWidget {
+  const _PaymentProofDialog({
+    required this.member,
+    required this.payer,
+    required this.provider,
+    required this.amountInCents,
+  });
+
+  final Person member;
+  final Person payer;
+  final String provider;
+  final int amountInCents;
+
+  @override
+  State<_PaymentProofDialog> createState() => _PaymentProofDialogState();
+}
+
+class _PaymentProofDialogState extends State<_PaymentProofDialog> {
+  late final TextEditingController _amountController;
+  final TextEditingController _referenceController = TextEditingController();
+  bool _proofAttached = false;
+  bool _confirmedCorrect = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _amountController = TextEditingController(
+      text: (_formatCurrency(widget.amountInCents)).replaceFirst('₱', ''),
+    );
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _referenceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+    insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Add payment proof',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            key: const ValueKey('payment-proof-amount'),
+            controller: _amountController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Amount paid',
+              prefixText: '₱ ',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Pay with ${widget.provider} (${widget.provider == 'GCash' ? '0998 000 7888' : '0921 456 7890'})',
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            key: const ValueKey('payment-proof-upload'),
+            onTap: () => setState(() => _proofAttached = true),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3FBF8),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _proofAttached ? green : const Color(0xFF9DD6C6),
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: Column(
                 children: [
-                  Text(
-                    'Jun pays you',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                  Icon(
+                    _proofAttached ? Icons.check_circle : Icons.image_outlined,
+                    color: green,
                   ),
+                  const SizedBox(height: 6),
                   Text(
-                    '₱220',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                    _proofAttached
+                        ? 'Payment screenshot attached'
+                        : 'Attach payment proof',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
-              const Pill(
-                'Unpaid',
-                bg: Color(0xFFFFF3D6),
-                fg: Color(0xFFB7791F),
-              ),
-              const SizedBox(height: 8),
-              Btn('Send neutral reminder', () {}, outlined: true),
-            ],
+            ),
           ),
-        ),
-        const Box(
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('payment-proof-reference'),
+            controller: _referenceController,
+            decoration: const InputDecoration(
+              labelText: 'Reference no.',
+              hintText: 'Optional',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          CheckboxListTile(
+            key: const ValueKey('payment-proof-confirm'),
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            value: _confirmedCorrect,
+            onChanged: (value) =>
+                setState(() => _confirmedCorrect = value ?? false),
+            title: const Text(
+              'I confirm that your payment is correct',
+              style: TextStyle(fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              key: const ValueKey('submit-payment-proof'),
+              onPressed: _proofAttached && _confirmedCorrect
+                  ? () => Navigator.pop(context, true)
+                  : null,
+              child: const Text('Submit'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _ReminderSheet extends StatefulWidget {
+  const _ReminderSheet({
+    required this.member,
+    required this.payer,
+    required this.amountInCents,
+  });
+
+  final Person member;
+  final Person payer;
+  final int amountInCents;
+
+  @override
+  State<_ReminderSheet> createState() => _ReminderSheetState();
+}
+
+class _ReminderSheetState extends State<_ReminderSheet> {
+  bool _includeDetails = true;
+  bool _sent = false;
+  late final TextEditingController _messageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _messageController = TextEditingController(
+      text:
+          'Hi ${widget.member.name}! Just a friendly reminder to settle your share for dinner.',
+    );
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    top: false,
+    child: Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Send a friendly reminder',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 14),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Ana paid you',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              Pill('Paid'),
-              Text(
-                '₱180',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+              Avatar(widget.member, size: 38),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'To: ${widget.member.name}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    Text(
+                      'Dinner at Jaro · ${_formatCurrency(widget.amountInCents)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('reminder-message'),
+            controller: _messageController,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Message',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            key: const ValueKey('reminder-details-switch'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Include payment details',
+              style: TextStyle(fontSize: 13),
+            ),
+            subtitle: Text(
+              _includeDetails
+                  ? 'Remind ${widget.member.name} to pay ${widget.payer.name}'
+                  : 'Send only the friendly reminder',
+              style: const TextStyle(fontSize: 11),
+            ),
+            value: _includeDetails,
+            onChanged: (value) => setState(() => _includeDetails = value),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              key: const ValueKey('send-reminder-submit'),
+              onPressed: () {
+                setState(() => _sent = true);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Reminder sent to ${widget.member.name}'),
+                  ),
+                );
+                Navigator.pop(context);
+              },
+              child: Text(_sent ? 'Reminder sent' : 'Send reminder'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+// ---------- 16. Recurring Bills ----------
+class RecurringBills extends StatefulWidget {
+  const RecurringBills({super.key});
+
+  @override
+  State<RecurringBills> createState() => _RecurringBillsState();
+}
+
+class _RecurringBillsState extends State<RecurringBills> {
+  final List<_RecurringBill> _bills = [
+    _RecurringBill('Boarding House Bills', 'Every month', '₱2,000', true),
+    _RecurringBill('Electricity', 'Due Oct 15', '₱1,400', true),
+    _RecurringBill('WiFi', 'Due Oct 20', '₱400', false),
+  ];
+
+  void _addBill(String name, String amount, String day) {
+    setState(() {
+      _bills.insert(0, _RecurringBill(name, 'Due $day', amount, true));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AppPage(
+    'Recurring Bills',
+    Column(
+      children: [
+        Box(
+          color: const Color(0xFF74E4A7),
+          Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Recurring Bills',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    Text(
+                      '₱2,000 monthly · 4 members',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              for (final person in people.take(4))
+                Padding(
+                  padding: const EdgeInsets.only(left: 3),
+                  child: Avatar(person, size: 28),
+                ),
+            ],
+          ),
         ),
-        TextButton(
-          onPressed: () => go(context, const Privacy()),
-          child: const Text('How we protect your data ›'),
+        for (var i = 0; i < _bills.length; i++)
+          Box(
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                backgroundColor: mint,
+                child: Icon(
+                  i == 0
+                      ? Icons.home_outlined
+                      : i == 1
+                      ? Icons.bolt_outlined
+                      : Icons.wifi,
+                  color: green,
+                ),
+              ),
+              title: Text(
+                _bills[i].name,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: Text(_bills[i].schedule),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _bills[i].amount,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(width: 6),
+                  Switch(
+                    value: _bills[i].enabled,
+                    onChanged: (value) =>
+                        setState(() => _bills[i].enabled = value),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        Box(
+          color: lime,
+          const Row(
+            children: [
+              Icon(Icons.notifications_active_outlined, color: green),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Reminders are 1–3 days before the due date',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     ),
-    bottom: Btn('Done', () => Navigator.popUntil(context, (r) => r.isFirst)),
+    bottom: Btn(
+      '+ Add recurring bill',
+      () => showDialog<void>(
+        context: context,
+        builder: (_) => _AddRecurringBillDialog(onAdd: _addBill),
+      ),
+    ),
+  );
+}
+
+class _RecurringBill {
+  _RecurringBill(this.name, this.schedule, this.amount, this.enabled);
+
+  final String name;
+  final String schedule;
+  final String amount;
+  bool enabled;
+}
+
+class _AddRecurringBillDialog extends StatefulWidget {
+  const _AddRecurringBillDialog({required this.onAdd});
+
+  final void Function(String name, String amount, String day) onAdd;
+
+  @override
+  State<_AddRecurringBillDialog> createState() =>
+      _AddRecurringBillDialogState();
+}
+
+class _AddRecurringBillDialogState extends State<_AddRecurringBillDialog> {
+  final _nameController = TextEditingController();
+  final _amountController = TextEditingController();
+  final _dayController = TextEditingController(text: '15');
+  bool _isMonthly = true;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _amountController.dispose();
+    _dayController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    final amount = _amountController.text.trim();
+    if (name.isEmpty || amount.isEmpty) return;
+    widget.onAdd(name, '₱$amount', _dayController.text.trim());
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Add Recurring Bill'),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            key: const ValueKey('recurring-name'),
+            controller: _nameController,
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              hintText: 'Boarding House Bills',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('recurring-amount'),
+            controller: _amountController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Amount',
+              prefixText: '₱ ',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Monthly'),
+            value: _isMonthly,
+            onChanged: (value) => setState(() => _isMonthly = value),
+          ),
+          TextField(
+            key: const ValueKey('recurring-day'),
+            controller: _dayController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Due day',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        key: const ValueKey('recurring-save'),
+        onPressed: _submit,
+        child: const Text('Save'),
+      ),
+    ],
+  );
+}
+
+// ---------- 19. Personal Ledger ----------
+class PersonalLedger extends StatelessWidget {
+  const PersonalLedger({super.key});
+
+  @override
+  Widget build(BuildContext context) => AppPage(
+    'Personal Ledger',
+    Column(
+      children: [
+        Box(
+          color: deep,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your Balance',
+                style: TextStyle(color: Colors.white70),
+              ),
+              const Text(
+                '₱710.00',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _ledgerBalance(
+                      'Owed to you',
+                      '₱1,950',
+                      const Color(0xFF74E4A7),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _ledgerBalance(
+                      'You owe',
+                      '₱1,240',
+                      const Color(0xFFFFF3D6),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        for (final row in const [
+          ('Owes you', 'Ana', '+₱350', green),
+          ('Owes you', 'Jun', '+₱220', green),
+          ('You owe', 'Leo', '-₱430', orange),
+          ('You owe', 'Mia', '-₱180', orange),
+        ])
+          Box(
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                backgroundColor: mint,
+                child: Text(
+                  row.$2.substring(0, 1),
+                  style: const TextStyle(
+                    color: green,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              title: Text(row.$2),
+              subtitle: Text(row.$1),
+              trailing: Text(
+                row.$3,
+                style: TextStyle(color: row.$4, fontWeight: FontWeight.w900),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+
+  Widget _ledgerBalance(String label, String amount, Color color) => Container(
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 11)),
+        Text(amount, style: const TextStyle(fontWeight: FontWeight.w900)),
+      ],
+    ),
+  );
+}
+
+// ---------- 20. Activity History ----------
+class ActivityHistory extends StatefulWidget {
+  const ActivityHistory({super.key});
+
+  @override
+  State<ActivityHistory> createState() => _ActivityHistoryState();
+}
+
+class _ActivityHistoryState extends State<ActivityHistory> {
+  String _filter = 'All';
+
+  @override
+  Widget build(BuildContext context) {
+    const activities = [
+      (
+        'Activity',
+        'Ana paid',
+        'Payment received · 10:35 AM',
+        Icons.check_circle,
+      ),
+      (
+        'Payments',
+        'You paid ₱320 to Mia',
+        'Payment recorded · 9:41 AM',
+        Icons.account_balance_wallet_outlined,
+      ),
+      (
+        'Reminders',
+        'Reminder sent to Leo',
+        'Due tomorrow · Yesterday',
+        Icons.notifications_outlined,
+      ),
+      (
+        'Reminders',
+        'You sent reminder to Jun',
+        'Friendly reminder · Yesterday',
+        Icons.send_outlined,
+      ),
+      (
+        'Activity',
+        'Electricity Bill was added',
+        'Boarding · Oct 12',
+        Icons.bolt_outlined,
+      ),
+    ];
+    final filtered = _filter == 'All'
+        ? activities
+        : activities.where((activity) => activity.$1 == _filter).toList();
+
+    return AppPage(
+      'Activity',
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final filter in [
+                  'All',
+                  'Payments',
+                  'Reminders',
+                  'Activity',
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(filter),
+                      selected: _filter == filter,
+                      onSelected: (_) => setState(() => _filter = filter),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final activity in filtered)
+            Box(
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: mint,
+                  child: Icon(activity.$4, color: green, size: 20),
+                ),
+                title: Text(
+                  activity.$2,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: Text(activity.$3),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------- 22. Invite ----------
+class InviteMembers extends StatelessWidget {
+  const InviteMembers({super.key});
+
+  @override
+  Widget build(BuildContext context) => AppPage(
+    'Invite',
+    Column(
+      children: [
+        const Text(
+          'Dinner at Jaro',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Add friends or share an invite link',
+          style: TextStyle(color: Colors.black54),
+        ),
+        const SizedBox(height: 18),
+        Container(
+          width: 190,
+          height: 190,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFE0E7E3)),
+          ),
+          child: const Icon(Icons.qr_code_2, size: 150, color: deep),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'bahinko.app/join/dinner-jaro',
+          style: TextStyle(fontSize: 12, color: Colors.black54),
+        ),
+        const SizedBox(height: 16),
+        Btn('Copy invite link', () async {
+          await Clipboard.setData(
+            const ClipboardData(text: 'https://bahinko.app/join/dinner-jaro'),
+          );
+          if (context.mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Invite link copied')));
+          }
+        }),
+        const SizedBox(height: 8),
+        Btn('Share via Messenger', () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invite ready to share')),
+          );
+        }, outlined: true),
+      ],
+    ),
   );
 }
 
@@ -1462,6 +2931,54 @@ class Statistics extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            Box(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Spending by category',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 10),
+                  for (final category in const [
+                    ('Dining', 48, green),
+                    ('Other', 30, deep),
+                    ('Shopping', 22, orange),
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 72,
+                            child: Text(
+                              category.$1,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          Expanded(
+                            child: LinearProgressIndicator(
+                              value: category.$2 / 100,
+                              minHeight: 8,
+                              borderRadius: BorderRadius.circular(8),
+                              color: category.$3,
+                              backgroundColor: mint,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('${category.$2}%'),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Btn(
+              'Open Personal Ledger',
+              () => go(context, const PersonalLedger()),
+              outlined: true,
+            ),
           ],
         ),
       ),
@@ -1519,25 +3036,33 @@ class Members extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        const Text(
-          'Dinner at Jaro members',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 8),
-        for (final p in people)
-          Box(
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Avatar(p),
-              title: Text(p.name),
-              subtitle: Text(p.pay),
-              trailing: Pill(
-                p.status,
-                bg: p.status == 'Paid' ? mint : const Color(0xFFFFF3D6),
-                fg: p.status == 'Paid' ? green : const Color(0xFFB7791F),
+        ValueListenableBuilder<List<Person>>(
+          valueListenable: groupMembers,
+          builder: (context, currentMembers, _) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Dinner at Jaro members (${currentMembers.length})',
+                style: const TextStyle(fontWeight: FontWeight.w800),
               ),
-            ),
+              const SizedBox(height: 8),
+              for (final p in currentMembers)
+                Box(
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Avatar(p),
+                    title: Text(p.name),
+                    subtitle: Text(p.pay),
+                    trailing: Pill(
+                      p.status,
+                      bg: p.status == 'Paid' ? mint : const Color(0xFFFFF3D6),
+                      fg: p.status == 'Paid' ? green : const Color(0xFFB7791F),
+                    ),
+                  ),
+                ),
+            ],
           ),
+        ),
         Box(
           color: lime,
           Column(
@@ -1552,13 +3077,81 @@ class Members extends StatelessWidget {
                 style: TextStyle(fontSize: 12),
               ),
               const SizedBox(height: 8),
-              Btn('Copy invite link', () {}),
+              Btn('Copy invite link', () => go(context, const InviteMembers())),
             ],
           ),
         ),
       ],
     ),
-    actions: [IconButton(icon: const Icon(Icons.add), onPressed: () {})],
+    actions: [
+      IconButton(
+        tooltip: 'Add member',
+        icon: const Icon(Icons.add),
+        onPressed: () => showDialog<void>(
+          context: context,
+          builder: (_) => _AddMemberDialog(onAdd: _addMember),
+        ),
+      ),
+    ],
+  );
+}
+
+class _AddMemberDialog extends StatefulWidget {
+  const _AddMemberDialog({required this.onAdd});
+
+  final ValueChanged<String> onAdd;
+
+  @override
+  State<_AddMemberDialog> createState() => _AddMemberDialogState();
+}
+
+class _AddMemberDialogState extends State<_AddMemberDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+    widget.onAdd(_nameController.text.trim());
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Add member'),
+    content: Form(
+      key: _formKey,
+      child: TextFormField(
+        key: const ValueKey('new-member-name'),
+        controller: _nameController,
+        autofocus: true,
+        textCapitalization: TextCapitalization.words,
+        decoration: const InputDecoration(
+          labelText: 'Member name',
+          border: OutlineInputBorder(),
+        ),
+        validator: (value) => value == null || value.trim().isEmpty
+            ? 'Enter a member name'
+            : null,
+        onFieldSubmitted: (_) => _submit(),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        key: const ValueKey('confirm-add-member'),
+        onPressed: _submit,
+        child: const Text('Add member'),
+      ),
+    ],
   );
 }
 
