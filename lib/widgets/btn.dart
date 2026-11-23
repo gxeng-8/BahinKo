@@ -42,9 +42,16 @@ class Btn extends StatelessWidget {
           Icon(icon, size: 18, color: fg),
           const SizedBox(width: 8),
         ],
-        Text(
-          text,
-          style: TextStyle(color: fg, fontWeight: FontWeight.w700),
+        // Flexible + FittedBox: long labels shrink instead of overflowing
+        // when the button is narrow (e.g. two buttons side by side).
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              text,
+              style: TextStyle(color: fg, fontWeight: FontWeight.w700),
+            ),
+          ),
         ),
       ],
     );

@@ -15,6 +15,8 @@ This guide turns the Figma hi-fi prototype (frames 1–25) into working screens 
 | Fonts bundled offline (LilitaOne titles, Poppins body) | `assets/fonts/`, `pubspec.yaml` |
 | Shared Figma components (see §1) | `lib/widgets/` |
 | **Reference screen**: Frame 1 Onboarding rebuilt to match Figma | `lib/screens/onboarding/onboarding_screen.dart` |
+| **M1 UI (mock data)**: Shell (4 tabs), Home (3), App Lock (2), Create Group (4), Group Detail (5), Members (21), Invite (22) | `lib/screens/shell.dart`, `home/`, `auth/`, `group/`; tests in `test/group_screens_test.dart` |
+| Group model + sample groups; `formatMoney()` ("₱1,060.00") | `lib/models/group.dart`, `lib/data/mock_data.dart`, `lib/utils/currency.dart` |
 
 Because `AppPage`, `Btn`, and `Pill` were restyled, **every existing screen already picked up** the new title font, round back button, gradient buttons, and rounded inputs. What's left per screen is the layout and content of each frame.
 

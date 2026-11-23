@@ -10,7 +10,7 @@ library;
 
 import 'package:flutter/material.dart';
 
-import 'package:bahinko/screens/shell.dart';
+import 'package:bahinko/screens/auth/app_lock_screen.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/widgets/btn.dart';
@@ -61,10 +61,11 @@ class Onboarding extends StatelessWidget {
                   const Spacer(),
                   Btn(
                     'Get Started',
+                    // Next: set up the app-lock PIN, then the main app.
                     // pushReplacement: users can't go "back" to onboarding.
                     () => Navigator.pushReplacement(
                       context,
-                      MaterialPageRoute(builder: (_) => const Shell()),
+                      MaterialPageRoute(builder: (_) => const AppLockScreen()),
                     ),
                     color: Colors.white,
                   ),

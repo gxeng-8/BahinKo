@@ -27,3 +27,19 @@ String formatCurrency(int amountInCents) {
       ? '₱$pesos'
       : '₱$pesos.${centavos.toString().padLeft(2, '0')}';
 }
+
+/// Formats centavos the way the Figma designs show money:
+/// thousands separators and always two decimals, e.g. 106000 → "₱1,060.00".
+/// Negative amounts get a minus sign in front: -35000 → "-₱350.00".
+String formatMoney(int amountInCents) {
+  final sign = amountInCents < 0 ? '-' : '';
+  final cents = amountInCents.abs();
+  final pesos = (cents ~/ 100).toString();
+  // Insert a comma every 3 digits from the right: "12000" → "12,000".
+  final withCommas = pesos.replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (_) => ',',
+  );
+  final centavos = (cents % 100).toString().padLeft(2, '0');
+  return '$sign₱$withCommas.$centavos';
+}
