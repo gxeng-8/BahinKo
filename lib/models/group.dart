@@ -59,6 +59,8 @@ class GroupExpense {
     this.items = const [],
     this.shares = const {},
     this.source = 'manual',
+    this.splitMode = 'equal',
+    this.spentOn,
     this.createdAt,
   });
 
@@ -73,6 +75,8 @@ class GroupExpense {
     List<ExpenseItem> items = const [],
     String category = 'Bills',
     String source = 'manual',
+    String splitMode = 'equal',
+    DateTime? spentOn,
   }) => GroupExpense(
     title: title.trim(),
     paidBy: paidByName,
@@ -83,6 +87,8 @@ class GroupExpense {
     category: category,
     icon: categoryNamed(category).icon,
     source: source,
+    splitMode: splitMode,
+    spentOn: spentOn,
     splitWays: shares.length,
     unpaidCount: shares.entries
         .where((s) => s.key != paidById && s.value > 0)
@@ -114,6 +120,14 @@ class GroupExpense {
 
   /// 'ai' if it came from the receipt scanner, otherwise 'manual'.
   final String source;
+
+  /// How it was split: 'equal', 'byItem', 'exact', 'percent' or 'shares'
+  /// (see utils/split_modes.dart). [shares] already holds the result.
+  final String splitMode;
+
+  /// The day the money was spent (the Date field). Null for old expenses;
+  /// then [createdAt] is used.
+  final DateTime? spentOn;
   final DateTime? createdAt;
 
   bool get fromAi => source == 'ai';
@@ -129,6 +143,9 @@ class GroupExpense {
     'items': [for (final i in items) i.toMap()],
     'shares': shares,
     'source': source,
+    'splitMode': splitMode,
+    // Stored as "2026-10-28": a calendar day, no time zone surprises.
+    if (spentOn != null) 'spentOn': _isoDay(spentOn!),
   };
 
   /// Builds an expense from a Firestore map (safe defaults for gaps).
@@ -157,9 +174,16 @@ class GroupExpense {
           e.key as String: (e.value as num).toInt(),
       },
       source: map['source'] as String? ?? 'manual',
+      splitMode: map['splitMode'] as String? ?? 'equal',
+      spentOn: DateTime.tryParse(map['spentOn'] as String? ?? ''),
       createdAt: createdAt,
     );
   }
+
+  static String _isoDay(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
 }
 
 /// A group of people who split bills together ("Dinner at Jaro").

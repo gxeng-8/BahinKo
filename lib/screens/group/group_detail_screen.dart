@@ -10,11 +10,11 @@ import 'package:flutter/material.dart';
 
 import 'package:bahinko/data/in_memory_group_service.dart' show demoGroupId;
 import 'package:bahinko/models/group.dart';
+import 'package:bahinko/screens/bill/add_expense_screen.dart';
 import 'package:bahinko/screens/bill/split_summary_screen.dart';
 import 'package:bahinko/screens/group/invite_members_screen.dart';
 import 'package:bahinko/screens/group/members_screen.dart';
 import 'package:bahinko/screens/history/activity_history_screen.dart';
-import 'package:bahinko/screens/scan/scan_receipt_screen.dart';
 import 'package:bahinko/screens/settle/settle_up_screen.dart';
 import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
@@ -109,7 +109,7 @@ class _GroupDetailState extends State<GroupDetail> {
                   Expanded(
                     child: Btn(
                       '+ Add Expense',
-                      () => go(context, ScanReceipt(groupId: id)),
+                      () => go(context, AddExpense(groupId: id)),
                     ),
                   ),
                 ],

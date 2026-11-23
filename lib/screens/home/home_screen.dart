@@ -5,7 +5,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'package:bahinko/models/group.dart';
-import 'package:bahinko/screens/bill/manual_receipt_entry_screen.dart';
+import 'package:bahinko/screens/bill/add_expense_screen.dart';
 import 'package:bahinko/screens/group/create_group_screen.dart';
 import 'package:bahinko/screens/group/group_detail_screen.dart';
 import 'package:bahinko/screens/group/join_group_screen.dart';
@@ -204,11 +204,10 @@ class _QuickActions extends StatelessWidget {
           label: 'Scan',
           onTap: () => go(context, const ScanReceipt()),
         ),
-        // TODO(M3): point "Add" to AddExpenseScreen (Frame 6) when ready.
         IconTile(
           Icons.add,
           label: 'Add',
-          onTap: () => go(context, const ManualReceiptEntry()),
+          onTap: () => go(context, const AddExpense()),
         ),
         IconTile(
           Icons.account_balance_wallet_outlined,

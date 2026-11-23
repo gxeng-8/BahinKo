@@ -7,6 +7,10 @@
 ///   → the receiver taps "Confirm received" → CONFIRMED → balances update.
 /// Payments to guests (no app) are confirmed right away, since guests can't
 /// confirm for themselves. BahinKo never moves money; it only records it.
+///
+/// Partial payments: "Pay part of it" / "Got part of it" record any amount
+/// up to what's owed. Balances simply go down by that much, and the card
+/// shows what's left (pending money is subtracted, so nobody pays twice).
 library;
 
 import 'package:flutter/material.dart';
@@ -14,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:bahinko/models/group.dart';
 import 'package:bahinko/models/person.dart';
 import 'package:bahinko/screens/settings/privacy_screen.dart';
+import 'package:bahinko/screens/settle/widgets/partial_payment_dialog.dart';
 import 'package:bahinko/screens/settle/widgets/payment_dialogs.dart';
 import 'package:bahinko/screens/settle/widgets/payment_proof_dialog.dart';
 import 'package:bahinko/screens/settle/widgets/reminder_sheet.dart';
@@ -185,6 +190,35 @@ class _SettleUpState extends State<SettleUp> {
     }
   }
 
+  /// "Pay part of it" (I pay [to]) or "Got part of it" ([from] pays me):
+  /// asks how much, then records it like a full payment.
+  Future<void> _partial(
+    GroupLedger ledger,
+    Person from,
+    Person to,
+    int maxCents,
+  ) async {
+    final iPay = from.id == _myId;
+    final result = await showPartialPaymentDialog(
+      context,
+      title: iPay ? 'Pay part of it' : 'Got part of it',
+      message: iPay
+          ? 'You owe ${to.name} ${formatMoney(maxCents)}. '
+                'How much are you paying now?'
+          : '${from.name} owes you ${formatMoney(maxCents)}. '
+                'How much did they give you?',
+      maxCents: maxCents,
+      methods: iPay ? const ['GCash', 'Maya', 'Cash'] : const ['Cash'],
+    );
+    if (result == null || !mounted) return;
+    if (result.method == 'cash') {
+      await _payment(ledger, from, to, result.cents, 'cash');
+    } else {
+      final provider = result.method == 'gcash' ? 'GCash' : 'Maya';
+      await _payWithApp(ledger, from, to, result.cents, provider);
+    }
+  }
+
   Future<void> _confirmReceived(Payment p) async {
     try {
       await GroupService.instance.confirmPayment(
@@ -284,6 +318,7 @@ class _SettleUpState extends State<SettleUp> {
             if (me != null) _payWithApp(ledger, me, to, cents, provider);
           },
           onCash: (from, to, cents) => _confirmCash(ledger, from, to, cents),
+          onPartial: (from, to, cents) => _partial(ledger, from, to, cents),
           onConfirm: _confirmReceived,
           onRemind: (from, cents) {
             final me = ledger.group.memberById(_myId);
@@ -303,6 +338,7 @@ class _LedgerBody extends StatelessWidget {
     required this.name,
     required this.onPayWithApp,
     required this.onCash,
+    required this.onPartial,
     required this.onConfirm,
     required this.onRemind,
   });
@@ -312,6 +348,9 @@ class _LedgerBody extends StatelessWidget {
   final String Function(Person) name;
   final void Function(Person to, int cents, String provider) onPayWithApp;
   final void Function(Person from, Person to, int cents) onCash;
+
+  /// Partial payment, up to [cents].
+  final void Function(Person from, Person to, int cents) onPartial;
   final void Function(Payment p) onConfirm;
   final void Function(Person from, int cents) onRemind;
 
@@ -426,9 +465,15 @@ class _LedgerBody extends StatelessWidget {
       ledger.group.memberById(id) ??
       Person('Former member', '?', muted, '', '', id: id);
 
-  /// Waiting text if pending payments already cover this transfer.
+  /// Pending (not yet confirmed) money from → to for this transfer.
+  int _pending(Transfer t) => pendingBetween(ledger.payments, t.fromId, t.toId);
+
+  /// What can still be paid: the transfer minus pending payments.
+  int _left(Transfer t) => t.amountCents - _pending(t);
+
+  /// Waiting text if pending payments cover all or part of this transfer.
   String? _waiting(Transfer t) {
-    final pending = pendingBetween(ledger.payments, t.fromId, t.toId);
+    final pending = _pending(t);
     if (pending <= 0) return null;
     return pending >= t.amountCents
         ? 'Waiting for ${name(_person(t.toId))} to confirm'
@@ -463,38 +508,53 @@ class _LedgerBody extends StatelessWidget {
     final to = _person(t.toId);
     final me = _person(myId);
     final waiting = _waiting(t);
+    final left = _left(t);
     return Box(
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _header(to, ledger.group.name, t.amountCents),
           const SizedBox(height: 10),
-          if (waiting != null)
-            Pill.unpaid(text: waiting)
-          else ...[
+          if (waiting != null) ...[
+            Pill.unpaid(text: waiting),
+            const SizedBox(height: 8),
+          ],
+          if (left > 0) ...[
+            if (waiting != null)
+              Text('${formatMoney(left)} left to pay', style: AppText.caption),
             Row(
               children: [
                 Expanded(
                   child: Btn(
                     'Pay with GCash',
-                    () => onPayWithApp(to, t.amountCents, 'GCash'),
+                    () => onPayWithApp(to, left, 'GCash'),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Btn(
                     'Pay with Maya',
-                    () => onPayWithApp(to, t.amountCents, 'Maya'),
+                    () => onPayWithApp(to, left, 'Maya'),
                     outlined: true,
                   ),
                 ),
               ],
             ),
-            TextButton.icon(
-              key: ValueKey('cash-${t.fromId}-${t.toId}'),
-              onPressed: () => onCash(me, to, t.amountCents),
-              icon: const Icon(Icons.payments_outlined, size: 18),
-              label: const Text('Paid in cash'),
+            Wrap(
+              children: [
+                TextButton.icon(
+                  key: ValueKey('cash-${t.fromId}-${t.toId}'),
+                  onPressed: () => onCash(me, to, left),
+                  icon: const Icon(Icons.payments_outlined, size: 18),
+                  label: const Text('Paid in cash'),
+                ),
+                TextButton.icon(
+                  key: ValueKey('partial-${t.fromId}-${t.toId}'),
+                  onPressed: () => onPartial(me, to, left),
+                  icon: const Icon(Icons.pie_chart_outline, size: 18),
+                  label: const Text('Pay part of it'),
+                ),
+              ],
             ),
           ],
         ],
@@ -506,30 +566,44 @@ class _LedgerBody extends StatelessWidget {
     final from = _person(t.fromId);
     final me = _person(myId);
     final waiting = _waiting(t);
+    final left = _left(t);
     return Box(
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _header(from, ledger.group.name, t.amountCents, owed: true),
           const SizedBox(height: 10),
-          if (waiting != null)
-            Pill.unpaid(text: 'They paid: confirm above')
-          else
+          if (waiting != null) ...[
+            Pill.unpaid(
+              text: left > 0
+                  ? '${formatMoney(_pending(t))} paid: confirm above'
+                  : 'They paid: confirm above',
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (left > 0) ...[
             Row(
               children: [
                 Expanded(
                   child: Btn(
                     'Send neutral reminder',
-                    () => onRemind(from, t.amountCents),
+                    () => onRemind(from, left),
                     outlined: true,
                   ),
                 ),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Btn('Got cash', () => onCash(from, me, t.amountCents)),
-                ),
+                Expanded(child: Btn('Got cash', () => onCash(from, me, left))),
               ],
             ),
+            Center(
+              child: TextButton.icon(
+                key: ValueKey('partial-${t.fromId}-${t.toId}'),
+                onPressed: () => onPartial(from, me, left),
+                icon: const Icon(Icons.pie_chart_outline, size: 18),
+                label: const Text('Got part of it'),
+              ),
+            ),
+          ],
         ],
       ),
     );

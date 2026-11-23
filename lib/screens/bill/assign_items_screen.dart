@@ -13,6 +13,8 @@
 /// Confirm Split SAVES the expense to the chosen group (Firestore): the
 /// total is split equally among the group's members and owed to whoever
 /// paid. Then Split Summary shows it, and Settle Up uses it for balances.
+/// "Split another way" hands the items to Add Expense (Frame 6) to split
+/// them by item, exact amounts, percent or shares instead.
 library;
 
 import 'package:flutter/material.dart';
@@ -20,8 +22,10 @@ import 'package:flutter/material.dart';
 import 'package:bahinko/data/mock_data.dart';
 import 'package:bahinko/models/group.dart';
 import 'package:bahinko/models/receipt_line_item.dart';
+import 'package:bahinko/screens/bill/add_expense_screen.dart';
 import 'package:bahinko/screens/bill/split_summary_screen.dart';
 import 'package:bahinko/screens/bill/widgets/edit_item_sheet.dart';
+import 'package:bahinko/screens/bill/widgets/payer_picker.dart';
 import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/services/receipt_scanner.dart';
 import 'package:bahinko/theme/app_colors.dart';
@@ -32,7 +36,6 @@ import 'package:bahinko/utils/split_calculator.dart';
 import 'package:bahinko/widgets/app_page.dart';
 import 'package:bahinko/widgets/app_toast.dart';
 import 'package:bahinko/widgets/async_state_view.dart';
-import 'package:bahinko/widgets/avatar.dart';
 import 'package:bahinko/widgets/btn.dart';
 import 'package:bahinko/widgets/info_banner.dart';
 import 'package:bahinko/widgets/pill.dart';
@@ -183,6 +186,18 @@ class _AssignItemsState extends State<AssignItems> {
     }
   }
 
+  /// Opens Add Expense with these items, in "By item" mode.
+  void _splitAnotherWay() => Navigator.of(context).pushReplacement(
+    MaterialPageRoute(
+      builder: (_) => AddExpense(
+        groupId: widget.groupId,
+        title: _store,
+        items: _items,
+        source: widget.scan?.source == ScanSource.ai ? 'ai' : 'manual',
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) => StreamBuilder<List<Group>>(
     stream: _groups,
@@ -298,9 +313,23 @@ class _AssignItemsState extends State<AssignItems> {
             ),
           ],
           const SizedBox(height: 8),
-          Btn(
-            _saving ? 'Saving…' : 'Confirm Split',
-            group == null || _saving ? null : () => _confirm(group),
+          Row(
+            children: [
+              Expanded(
+                child: Btn(
+                  'Split another way',
+                  _items.isEmpty || _saving ? null : _splitAnotherWay,
+                  outlined: true,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Btn(
+                  _saving ? 'Saving…' : 'Confirm Split',
+                  group == null || _saving ? null : () => _confirm(group),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -357,50 +386,15 @@ class _GroupAndPayer extends StatelessWidget {
         const SizedBox(height: 12),
         Text('Paid by', style: AppText.section),
         const SizedBox(height: 8),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (final m in group.members)
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: GestureDetector(
-                    onTap: () => onPayer(m.id),
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: m.id == payerId
-                                  ? green
-                                  : Colors.transparent,
-                              width: 2,
-                            ),
-                          ),
-                          child: Avatar(m, size: 36),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          m.id == GroupService.instance.myId ? 'You' : m.name,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: m.id == payerId
-                                ? FontWeight.w700
-                                : FontWeight.w400,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
+        PayerPicker(
+          members: group.members,
+          payerId: payerId,
+          onChanged: onPayer,
         ),
         const SizedBox(height: 6),
         Text(
-          'Split equally among ${group.members.length} members.',
+          'Split equally among ${group.members.length} members. '
+          'Tap "Split another way" to split by item, amount, percent or shares.',
           style: AppText.caption,
         ),
       ],

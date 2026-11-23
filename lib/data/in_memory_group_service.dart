@@ -310,6 +310,8 @@ class InMemoryGroupService extends GroupService {
       items: expense.items,
       shares: expense.shares,
       source: expense.source,
+      splitMode: expense.splitMode,
+      spentOn: expense.spentOn,
       createdAt: DateTime.now(),
     );
     _updateGroup(

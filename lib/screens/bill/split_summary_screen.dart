@@ -178,16 +178,20 @@ class _ReceiptCard extends StatelessWidget {
             const _Dashes(),
             Row(
               children: [
-                const Text(
-                  'Each person pays',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1,
-                    color: muted,
+                Expanded(
+                  child: Text(
+                    // Equal split: everyone pays the same; otherwise not.
+                    e.splitMode == 'equal'
+                        ? 'Each person pays'
+                        : 'Who pays what',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1,
+                      color: muted,
+                    ),
                   ),
                 ),
-                const Spacer(),
                 Text(
                   '${e.shares.length} people sharing',
                   style: AppText.caption,

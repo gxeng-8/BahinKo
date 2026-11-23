@@ -50,12 +50,15 @@ class Pill extends StatelessWidget {
           Icon(icon, size: 12, color: fg),
           const SizedBox(width: 4),
         ],
-        Text(
-          text,
-          style: TextStyle(
-            color: fg,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
+        // Flexible: long text wraps instead of overflowing narrow cards.
+        Flexible(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: fg,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],
