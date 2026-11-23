@@ -1,4 +1,4 @@
-package com.example.bahinko
+package com.bahinko.app
 
 import io.flutter.embedding.android.FlutterActivity
 
