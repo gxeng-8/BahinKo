@@ -93,7 +93,8 @@ class _Message extends StatelessWidget {
   final Widget? action;
 
   @override
-  Widget build(BuildContext context) => Padding(
+  Widget build(BuildContext context) => Container(
+    width: double.infinity, // centered even inside a left-aligned Column
     padding: EdgeInsets.all(compact ? 12 : 32),
     child: Column(
       mainAxisSize: MainAxisSize.min,

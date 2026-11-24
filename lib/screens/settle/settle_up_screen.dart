@@ -386,24 +386,29 @@ class _LedgerBody extends StatelessWidget {
         if (!p.isConfirmed && p.toId == myId) p,
     ];
     if (ledger.settled && toConfirm.isEmpty) {
-      return Column(
-        children: [
-          const SizedBox(height: 40),
-          const CircleAvatar(
-            radius: 36,
-            backgroundColor: mint,
-            child: Icon(Icons.celebration_outlined, color: green, size: 36),
-          ),
-          const SizedBox(height: 12),
-          Text('All settled up!', style: AppText.title),
-          const SizedBox(height: 4),
-          Text(
-            ledger.expenses.isEmpty
-                ? 'No expenses in ${group.name} yet.'
-                : 'Nobody in ${group.name} owes anything.',
-            style: AppText.caption,
-          ),
-        ],
+      // Full width so everything sits in the middle of the screen.
+      return SizedBox(
+        width: double.infinity,
+        child: Column(
+          children: [
+            const SizedBox(height: 40),
+            const CircleAvatar(
+              radius: 36,
+              backgroundColor: mint,
+              child: Icon(Icons.celebration_outlined, color: green, size: 36),
+            ),
+            const SizedBox(height: 12),
+            Text('All settled up!', style: AppText.title),
+            const SizedBox(height: 4),
+            Text(
+              ledger.expenses.isEmpty
+                  ? 'No expenses in ${group.name} yet.'
+                  : 'Nobody in ${group.name} owes anything.',
+              textAlign: TextAlign.center,
+              style: AppText.caption,
+            ),
+          ],
+        ),
       );
     }
 
