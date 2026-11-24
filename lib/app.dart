@@ -20,6 +20,7 @@ import 'package:bahinko/screens/shell.dart';
 import 'package:bahinko/services/app_lock_service.dart';
 import 'package:bahinko/services/settings_service.dart';
 import 'package:bahinko/theme/app_theme.dart';
+import 'package:bahinko/widgets/refreshable.dart';
 
 class BahinKoApp extends StatefulWidget {
   const BahinKoApp({
@@ -100,6 +101,8 @@ class _BahinKoAppState extends State<BahinKoApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) => MaterialApp(
     navigatorKey: _navigatorKey,
     debugShowCheckedModeBanner: false,
+    // Short pages can still be pulled down to refresh.
+    scrollBehavior: const AlwaysPullableScrollBehavior(),
     title: 'BahinKo',
     theme: buildAppTheme(), // colors, fonts, inputs: see theme/app_theme.dart
     builder: (context, child) => LayoutBuilder(

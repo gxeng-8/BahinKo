@@ -84,6 +84,7 @@ class _ActivityHistoryState extends State<ActivityHistory> {
   @override
   Widget build(BuildContext context) => AppPage(
     'Activity',
+    onRefresh: () => setState(_listen),
     Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

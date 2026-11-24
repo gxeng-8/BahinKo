@@ -76,6 +76,9 @@ class _MembersState extends State<Members> {
   @override
   Widget build(BuildContext context) => AppPage(
     'Members',
+    onRefresh: () => setState(
+      () => _group = GroupService.instance.watchGroup(widget.groupId),
+    ),
     Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

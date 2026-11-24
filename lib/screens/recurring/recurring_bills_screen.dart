@@ -38,7 +38,7 @@ class RecurringBills extends StatefulWidget {
 }
 
 class _RecurringBillsState extends State<RecurringBills> {
-  late final Stream<List<Group>> _groups;
+  late Stream<List<Group>> _groups;
   String? _groupId;
 
   /// The bills stream for [_billsFor] (re-created when the group changes).
@@ -56,6 +56,12 @@ class _RecurringBillsState extends State<RecurringBills> {
     _groups = GroupService.instance.watchMyGroups();
     _groupId = widget.groupId;
   }
+
+  /// Pull-to-refresh: re-open the groups and bills streams.
+  void _reload() => setState(() {
+    _groups = GroupService.instance.watchMyGroups();
+    _billsFor = null; // _billsOf() opens a fresh bills stream
+  });
 
   /// The group to show: the chosen one, else a bills-type group, else the
   /// newest.
@@ -154,6 +160,7 @@ class _RecurringBillsState extends State<RecurringBills> {
       final group = _pick(groups);
       return AppPage(
         'Recurring Bills',
+        onRefresh: _reload,
         AsyncStateView<List<Group>>(
           snapshot: snap,
           isEmpty: (l) => l.isEmpty,

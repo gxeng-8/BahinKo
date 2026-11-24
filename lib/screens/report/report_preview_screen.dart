@@ -95,6 +95,9 @@ class _ReportPreviewState extends State<ReportPreview> {
       final busy = _exporting != null;
       return AppPage(
         'Report Preview',
+        onRefresh: () => setState(
+          () => _ledger = GroupService.instance.watchLedger(widget.groupId),
+        ),
         AsyncStateView<GroupLedger>(
           snapshot: snap,
           onRetry: () => setState(

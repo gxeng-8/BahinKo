@@ -132,6 +132,7 @@ class _SplitSummaryState extends State<SplitSummary> {
             : (group == null ? const AsyncSnapshot.waiting() : expenseSnap);
         return AppPage(
           'Split Summary',
+          onRefresh: () => setState(_listen),
           AsyncStateView<GroupExpense>(
             snapshot: combined,
             onRetry: _reload,

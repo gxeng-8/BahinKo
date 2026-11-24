@@ -126,6 +126,11 @@ abstract class GroupService {
   /// and sent when you go back online. Does nothing where unsupported.
   Future<void> setOffline(bool offline) async {}
 
+  /// Pull-to-refresh: checks the server for the latest data. Screens then
+  /// re-open their live streams. Throws [GroupFailure] if it can't connect.
+  /// Does nothing where there's no server (the in-memory sample data).
+  Future<void> refresh() async {}
+
   // ---------- Balances (Settle Up, Home, Group Detail) ----------
 
   /// Saves how many members still owe money (the "N unpaid" on cards).

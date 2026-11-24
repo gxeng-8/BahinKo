@@ -64,6 +64,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   Widget build(BuildContext context) => AppPage(
     'Notifications',
+    onRefresh: () => setState(_listen),
     StreamBuilder<List<GroupEvent>>(
       stream: _stream,
       builder: (context, snap) => AsyncStateView<List<GroupEvent>>(

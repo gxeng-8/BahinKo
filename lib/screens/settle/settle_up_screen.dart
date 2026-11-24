@@ -53,7 +53,7 @@ class SettleUp extends StatefulWidget {
 class _SettleUpState extends State<SettleUp> {
   String? _groupId;
   Stream<GroupLedger>? _ledger;
-  late final Stream<List<Group>> _groups;
+  late Stream<List<Group>> _groups;
 
   /// Last unpaid count we saved, so we don't write the same value twice.
   int? _savedUnpaid;
@@ -66,6 +66,15 @@ class _SettleUpState extends State<SettleUp> {
     _groups = GroupService.instance.watchMyGroups();
     if (widget.groupId != null) _open(widget.groupId!);
   }
+
+  /// Pull-to-refresh: re-open the groups list and the open ledger.
+  void _reload() => setState(() {
+    _groups = GroupService.instance.watchMyGroups();
+    final id = _groupId;
+    if (id != null && _ledger != null) {
+      _ledger = GroupService.instance.watchLedger(id);
+    }
+  });
 
   void _open(String groupId) => setState(() {
     _groupId = groupId;
@@ -275,6 +284,7 @@ class _SettleUpState extends State<SettleUp> {
   @override
   Widget build(BuildContext context) => AppPage(
     'Settle Up',
+    onRefresh: _reload,
     _ledger == null ? _groupChooser() : _ledgerView(),
     bottom: Btn('Done', () => Navigator.popUntil(context, (r) => r.isFirst)),
   );

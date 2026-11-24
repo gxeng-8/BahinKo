@@ -22,6 +22,7 @@ import 'package:bahinko/models/person.dart';
 import 'package:bahinko/models/recurring_bill.dart';
 import 'package:bahinko/services/auth_service.dart';
 import 'package:bahinko/services/group_service.dart';
+import 'package:bahinko/services/settings_service.dart';
 
 class FirestoreGroupService extends GroupService {
   /// How long to wait for the server.
@@ -371,6 +372,29 @@ class FirestoreGroupService extends GroupService {
         ),
       );
     await _commit(batch);
+  }
+
+  @override
+  Future<void> refresh() async {
+    if (SettingsService.instance.offlineMode) {
+      throw const GroupFailure(
+        'Offline mode is on. Turn it off in Profile to refresh.',
+      );
+    }
+    try {
+      // Ask the SERVER (not the phone's cache) for my groups; this also
+      // brings the cache up to date for every screen listening to it.
+      await _groups
+          .where('memberIds', arrayContains: _uid)
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      throw const GroupFailure(
+        "Can't reach the server. Check your internet connection.",
+      );
+    } on FirebaseException catch (e) {
+      throw _toFailure(e);
+    }
   }
 
   @override

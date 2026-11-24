@@ -13,6 +13,7 @@ import 'package:bahinko/screens/stats/statistics_screen.dart';
 import 'package:bahinko/services/invite_links.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/utils/navigation.dart';
+import 'package:bahinko/widgets/refreshable.dart';
 
 class Shell extends StatefulWidget {
   const Shell({super.key});
@@ -31,7 +32,14 @@ class ShellState extends State<Shell> {
   int tab = 0;
 
   /// The page for each tab, in the same order as the nav buttons.
-  static const _pages = [Home(), Statistics(), ActivityHistory(), Profile()];
+  /// Swipe down to refresh: Home, Stats and Profile are rebuilt by
+  /// Refreshable; Activity History refreshes itself (it's also a pushed page).
+  static const _pages = [
+    Refreshable(child: Home()),
+    Refreshable(child: Statistics()),
+    ActivityHistory(),
+    Refreshable(child: Profile()),
+  ];
 
   void select(int index) => setState(() => tab = index);
 

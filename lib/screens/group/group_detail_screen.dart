@@ -80,6 +80,7 @@ class _GroupDetailState extends State<GroupDetail> {
       final id = widget.groupId;
       return AppPage(
         ledger?.group.name ?? 'Group', // title once loaded
+        onRefresh: _reload,
         AsyncStateView<GroupLedger>(
           snapshot: snapshot,
           onRetry: _reload,

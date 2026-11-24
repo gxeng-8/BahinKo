@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
+import 'package:bahinko/widgets/refreshable.dart';
 
 /// Standard page scaffold so every screen looks consistent.
 class AppPage extends StatelessWidget {
@@ -16,7 +17,18 @@ class AppPage extends StatelessWidget {
   final Widget? bottom;
   final List<Widget>? actions;
 
-  const AppPage(this.title, this.body, {super.key, this.bottom, this.actions});
+  /// Swipe down to reload. The page re-opens its streams here (the server
+  /// check runs first, see [syncNow]). Null = no pull-to-refresh (forms).
+  final VoidCallback? onRefresh;
+
+  const AppPage(
+    this.title,
+    this.body, {
+    super.key,
+    this.bottom,
+    this.actions,
+    this.onRefresh,
+  });
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -25,7 +37,18 @@ class AppPage extends StatelessWidget {
       leading: Navigator.canPop(context) ? const RoundBackButton() : null,
       actions: actions,
     ),
-    body: SingleChildScrollView(padding: const EdgeInsets.all(16), child: body),
+    body: onRefresh == null
+        ? SingleChildScrollView(padding: const EdgeInsets.all(16), child: body)
+        : PullToRefresh(
+            onRefresh: () async {
+              await syncNow(context);
+              onRefresh!();
+            },
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: body,
+            ),
+          ),
     bottomNavigationBar: bottom == null
         ? null
         : Container(

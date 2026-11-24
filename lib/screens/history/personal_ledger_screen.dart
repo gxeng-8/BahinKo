@@ -43,6 +43,8 @@ class _PersonalLedgerState extends State<PersonalLedger> {
     final myId = GroupService.instance.myId;
     return AppPage(
       'Personal Ledger',
+      onRefresh: () =>
+          setState(() => _ledgers = GroupService.instance.watchAllLedgers()),
       StreamBuilder<List<GroupLedger>>(
         stream: _ledgers,
         builder: (context, snap) => AsyncStateView<List<GroupLedger>>(
