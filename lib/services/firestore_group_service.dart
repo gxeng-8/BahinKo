@@ -203,7 +203,11 @@ class FirestoreGroupService extends GroupService {
           'lastJoinCode': code,
         }),
       );
-      // Now a member, so we may write to the activity feed.
+      // Now a member, so we may read the group and write to its feed.
+      final memberIds = List<String>.from(
+        (await _groups.doc(groupId).get()).data()?['memberIds'] as List? ??
+            const [],
+      );
       await _waitForServer(
         _sub(groupId, 'activity').add(
           _activity(
@@ -211,6 +215,7 @@ class FirestoreGroupService extends GroupService {
               type: 'join',
               actorName: yourName,
               actorId: uid,
+              forIds: memberIds, // everyone already in the group
               text: '$yourName joined the group',
             ),
           ),
@@ -436,7 +441,8 @@ class FirestoreGroupService extends GroupService {
             type: 'payment',
             actorName: payment.fromName,
             actorId: _uid,
-            forIds: [payment.toId],
+            // [payer, receiver]: whoever didn't record it gets told.
+            forIds: [payment.fromId, payment.toId],
             text: '${payment.fromName} paid ${payment.toName}',
             amountCents: payment.amountCents,
           ),

@@ -20,6 +20,7 @@ import 'package:bahinko/models/recurring_bill.dart';
 import 'package:bahinko/utils/settle_calculator.dart';
 import 'package:bahinko/utils/stream_utils.dart';
 import 'package:bahinko/utils/notifications.dart';
+import 'package:bahinko/services/settings_service.dart';
 
 abstract class GroupService {
   /// The service the whole app uses. main() replaces it with Firestore.
@@ -244,10 +245,38 @@ abstract class GroupService {
         return all;
       });
 
-  /// The bell: activity from all my groups that is about me and made by
-  /// someone else, newest first (see utils/notifications.dart).
-  Stream<List<({Group group, ActivityEvent event})>> watchNotifications() =>
-      watchAllActivity().map((all) => notificationsFor(all, myId));
+  /// The bell, newest first (see utils/notifications.dart):
+  /// activity from all my groups that is about me and made by someone
+  /// else, plus recurring bills due within [daysBefore] days.
+  Stream<List<GroupEvent>> watchNotifications({
+    int? daysBefore,
+    DateTime Function() clock = DateTime.now,
+  }) {
+    final activity = watchAllActivity().map(
+      (all) => notificationsFor(all, myId),
+    );
+    final dueSoon = watchAcrossMyGroups(
+      (g) => watchRecurring(g.id).map(
+        (bills) => <GroupEvent>[
+          for (final bill in bills)
+            if (dueSoonNotice(
+                  bill,
+                  myId,
+                  now: clock(),
+                  daysBefore:
+                      daysBefore ?? SettingsService.instance.reminderDaysBefore,
+                )
+                case final notice?)
+              (group: g, event: notice),
+        ],
+      ),
+    ).map((perGroup) => [for (final list in perGroup) ...list]);
+    return combineLatest2(activity, dueSoon, (a, b) {
+      final all = [...a, ...b];
+      sortNewestFirst(all);
+      return all;
+    });
+  }
 }
 
 /// Checks an expense before saving. Throws [GroupFailure] with a message

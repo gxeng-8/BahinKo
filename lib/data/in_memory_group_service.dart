@@ -409,7 +409,7 @@ class InMemoryGroupService extends GroupService {
         type: 'payment',
         actorName: payment.fromName,
         actorId: payment.fromId,
-        forIds: [payment.toId],
+        forIds: [payment.fromId, payment.toId],
         text: '${payment.fromName} paid ${payment.toName}',
         amountCents: payment.amountCents,
       ),

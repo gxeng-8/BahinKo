@@ -52,3 +52,15 @@ Stream<R> combineLatest3<A, B, C, R>(
   );
   return out.stream;
 }
+
+/// Two-stream version of [combineLatest3].
+Stream<R> combineLatest2<A, B, R>(
+  Stream<A> sa,
+  Stream<B> sb,
+  R Function(A a, B b) combine,
+) => combineLatest3<A, B, bool, R>(
+  sa,
+  sb,
+  Stream.value(true),
+  (a, b, _) => combine(a, b),
+);

@@ -253,8 +253,8 @@ class _HeaderIcon extends StatelessWidget {
             customBorder: const CircleBorder(),
             onTap: onTap,
             child: SizedBox(
-              width: 36,
-              height: 36,
+              width: 44, // easy to hit with a thumb
+              height: 44,
               child: Center(
                 child: letter == null
                     ? Icon(icon, color: Colors.white, size: 20)
@@ -342,7 +342,7 @@ class _QuickActions extends StatelessWidget {
   );
 }
 
-/// 4×2 grid of categories. Tapping one starts a new group of that type.
+/// Grid of group categories. Tapping one starts a new group of that type.
 class _CategoryGrid extends StatelessWidget {
   const _CategoryGrid();
 
@@ -354,13 +354,14 @@ class _CategoryGrid extends StatelessWidget {
     mainAxisSpacing: 8,
     childAspectRatio: 0.9,
     children: [
+      // "Custom" is left out here; it's still offered in Create Group.
       for (final category in groupCategories)
-        IconTile(
-          // The last tile reads "More" on Home but means "Custom".
-          category.icon == Icons.add ? Icons.grid_view : category.icon,
-          label: category.name == 'Custom' ? 'More' : category.name,
-          onTap: () => go(context, CreateGroup(initialCategory: category)),
-        ),
+        if (category.name != 'Custom')
+          IconTile(
+            category.icon,
+            label: category.name,
+            onTap: () => go(context, CreateGroup(initialCategory: category)),
+          ),
     ],
   );
 }

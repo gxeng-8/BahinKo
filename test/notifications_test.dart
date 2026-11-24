@@ -6,6 +6,7 @@ import 'package:bahinko/app.dart';
 import 'package:bahinko/data/in_memory_group_service.dart';
 import 'package:bahinko/data/mock_data.dart';
 import 'package:bahinko/models/group.dart';
+import 'package:bahinko/models/recurring_bill.dart';
 import 'package:bahinko/screens/notifications/notifications_screen.dart';
 import 'package:bahinko/screens/profile/profile_screen.dart';
 import 'package:bahinko/services/auth_service.dart';
@@ -86,14 +87,17 @@ void main() {
         amountCents: 45000,
       );
       expect(
-        notificationText(ev('reminder')),
+        notificationText(ev('reminder'), 'me'),
         'Mia reminded you to pay ₱450.00',
       );
       expect(
-        notificationText(ev('confirm')),
+        notificationText(ev('confirm'), 'me'),
         'Mia confirmed your ₱450.00 payment',
       );
-      expect(notificationText(ev('payment')), contains('paid you ₱450.00'));
+      expect(
+        notificationText(ev('payment'), 'me'),
+        contains('paid you ₱450.00'),
+      );
     });
   });
 
@@ -166,5 +170,81 @@ void main() {
     final images = tester.widgetList<Image>(find.byType(Image)).toList();
     final names = [for (final i in images) (i.image as AssetImage).assetName];
     expect(names, ['assets/logos/gcash_mark.png', 'assets/logos/maya.png']);
+  });
+
+  group('more notification types', () {
+    test('payment claimed: receiver is asked to confirm', () {
+      const e = ActivityEvent(
+        type: 'payment',
+        text: '',
+        actorName: 'Jun',
+        actorId: 'jun',
+        forIds: ['jun', 'me'], // [payer, receiver]
+        amountCents: 84500,
+      );
+      expect(isNotificationFor(e, 'me'), isTrue);
+      expect(
+        notificationText(e, 'me'),
+        'Jun says they paid you ₱845.00. Tap to confirm.',
+      );
+    });
+
+    test('receiver recorded my payment: I am told', () {
+      const e = ActivityEvent(
+        type: 'payment',
+        text: '',
+        actorName: 'Mia',
+        actorId: 'mia',
+        forIds: ['me', 'mia'],
+        amountCents: 45000,
+      );
+      expect(isNotificationFor(e, 'me'), isTrue);
+      expect(notificationText(e, 'me'), 'Mia recorded your ₱450.00 payment');
+    });
+
+    test('bill due soon, within the reminder window only', () {
+      final wifi = RecurringBill.create(
+        name: 'WiFi',
+        amountCents: 150000,
+        dayOfMonth: 15,
+      );
+      DateTime day(int d) => DateTime(2026, 11, d, 9);
+      expect(dueSoonNotice(wifi, 'me', now: day(10), daysBefore: 3), isNull);
+      expect(
+        dueSoonNotice(wifi, 'me', now: day(13), daysBefore: 3)!.text,
+        'WiFi is due in 2 days (₱1,500.00)',
+      );
+      expect(
+        dueSoonNotice(wifi, 'me', now: day(14), daysBefore: 3)!.text,
+        contains('tomorrow'),
+      );
+      expect(
+        dueSoonNotice(wifi, 'me', now: day(15), daysBefore: 3)!.text,
+        contains('today'),
+      );
+      wifi.enabled = false; // paused
+      expect(dueSoonNotice(wifi, 'me', now: day(14), daysBefore: 3), isNull);
+    });
+
+    testWidgets('due bills show up under the bell', (tester) async {
+      final today = DateTime.now();
+      final bill = RecurringBill.create(
+        name: 'Rent',
+        amountCents: 300000,
+        dayOfMonth: today.day,
+      );
+      await GroupService.instance.addRecurring(demoGroupId, bill);
+      await openApp(tester);
+      expect(badgeText(tester), '1');
+      await tester.tap(find.byKey(const ValueKey('home-bell')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Rent is due today'), findsOneWidget);
+    });
+  });
+
+  testWidgets('Home has no "More" category tile', (tester) async {
+    await openApp(tester);
+    expect(find.text('More'), findsNothing);
+    expect(find.text('Dinner'), findsWidgets);
   });
 }

@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:bahinko/screens/group/group_detail_screen.dart';
 import 'package:bahinko/screens/history/activity_history_screen.dart'
     show dayLabel, timeLabel;
+import 'package:bahinko/screens/recurring/recurring_bills_screen.dart';
 import 'package:bahinko/screens/settle/settle_up_screen.dart';
 import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/services/settings_service.dart';
@@ -50,15 +51,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       (n.event.createdAt ?? DateTime.now()).isAfter(_seenBefore);
 
   void _open(GroupEvent n) {
-    final toSettle = n.event.type == 'payment' || n.event.type == 'reminder';
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => toSettle
-            ? SettleUp(groupId: n.group.id)
-            : GroupDetail(groupId: n.group.id),
-      ),
-    );
+    final id = n.group.id;
+    final Widget page = switch (n.event.type) {
+      'payment' || 'reminder' || 'confirm' => SettleUp(groupId: id),
+      'due' => RecurringBills(groupId: id),
+      _ => GroupDetail(groupId: id),
+    };
+    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
   }
 
   @override
@@ -73,8 +72,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         isEmpty: (list) => list.isEmpty,
         emptyIcon: Icons.notifications_none,
         emptyMessage:
-            "You're all caught up. Reminders, payments to confirm and "
-            'confirmations will show up here.',
+            "You're all caught up. Payments to confirm, reminders, "
+            'confirmations and bills due soon will show up here.',
         builder: (list) {
           String? lastDay;
           return Column(
@@ -114,6 +113,8 @@ class _NotificationTile extends StatelessWidget {
     'payment' => (Icons.account_balance_wallet_outlined, green),
     'confirm' => (Icons.check_circle, green),
     'expense' => (Icons.receipt_long_outlined, deep),
+    'due' => (Icons.event_outlined, const Color(0xFFB45309)),
+    'join' => (Icons.person_add_alt_1_outlined, green),
     _ => (Icons.edit_outlined, deep),
   };
 
@@ -138,7 +139,7 @@ class _NotificationTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    notificationText(n.event),
+                    notificationText(n.event, GroupService.instance.myId),
                     style: TextStyle(
                       fontWeight: isNew ? FontWeight.w700 : FontWeight.w500,
                     ),
