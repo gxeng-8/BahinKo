@@ -122,7 +122,7 @@ class _JoinGroupScreenState extends State<JoinGroupScreen> {
             controller: _codeController,
             textCapitalization: TextCapitalization.characters,
             decoration: InputDecoration(
-              hintText: 'DJ7Q2 or bahinko.app/j/DJ7Q2',
+              hintText: 'DJ7Q2, or paste the invite link',
               suffixIcon: canScanQr
                   ? IconButton(
                       tooltip: 'Scan QR code',

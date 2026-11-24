@@ -1,0 +1,91 @@
+<!doctype html>
+<!--
+  Invite page: https://bahinko-303f2.web.app/j/CODE
+  - Phones with BahinKo (APK signed with the key in .well-known/assetlinks.json)
+    skip this page; Android opens the app directly.
+  - Everyone else lands here: "Open in BahinKo" opens the app through
+    bahinko://join/CODE, and the code is shown so it can be typed in Join.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Join on BahinKo</title>
+  <meta name="description" content="You're invited to split bills on BahinKo.">
+  <meta property="og:title" content="You're invited to a BahinKo group">
+  <meta property="og:description" content="Tap to join and split the bill.">
+  <meta property="og:image" content="https://bahinko-303f2.web.app/icon.png">
+  <link rel="icon" href="/icon.png">
+  <style>
+    :root { --green:#0A9B7A; --deep:#064E3B; --mint:#E6F7F1; --lime:#A7F3A0; --bg:#EFF3F1; --text:#13261F; --muted:#5B6B65; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      display:flex; align-items:center; justify-content:center; padding:16px; }
+    .card { width:100%; max-width:400px; background:#fff; border-radius:24px; padding:28px 22px;
+      text-align:center; box-shadow:0 8px 30px rgba(6,78,59,.10); }
+    img { width:72px; height:72px; border-radius:18px; }
+    h1 { font-size:22px; margin:14px 0 4px; }
+    p { color:var(--muted); margin:6px 0; line-height:1.45; font-size:15px; }
+    .code { display:inline-block; margin:16px 0 6px; padding:10px 20px; border-radius:14px;
+      background:var(--mint); color:var(--deep); font-size:30px; font-weight:800; letter-spacing:6px; }
+    .btn { display:block; width:100%; margin-top:14px; padding:15px; border-radius:14px; border:0;
+      font-size:16px; font-weight:700; text-decoration:none; cursor:pointer; }
+    .primary { background:linear-gradient(135deg,#12A883,var(--deep)); color:#fff; }
+    .secondary { background:var(--mint); color:var(--deep); }
+    .steps { text-align:left; margin:18px 0 0; padding:14px 16px 14px 34px; background:var(--bg);
+      border-radius:14px; font-size:14px; color:var(--muted); }
+    .steps li { margin:4px 0; }
+    .note { display:none; margin-top:14px; padding:12px; border-radius:12px; background:#FFF4E5; color:#8A4B00; font-size:14px; }
+    .bad h1 { color:#B42318; }
+  </style>
+</head>
+<body>
+  <main class="card" id="card">
+    <img src="/icon.png" alt="BahinKo">
+    <h1 id="title">You're invited!</h1>
+    <p id="sub">Join the group on BahinKo to split the bill.</p>
+    <div class="code" id="code">-----</div>
+    <a class="btn primary" id="open" href="#">Open in BahinKo</a>
+    <button class="btn secondary" id="copy" type="button">Copy code</button>
+    <div class="note" id="noapp">BahinKo didn't open. Install the app first (ask the group for the APK), then tap the link again or type the code in <b>Join</b>.</div>
+    <ol class="steps">
+      <li>Open <b>BahinKo</b></li>
+      <li>Tap <b>Join</b> on Home</li>
+      <li>Enter the code above</li>
+    </ol>
+  </main>
+  <script>
+    // The code is the last part of the path: /j/NX3NP
+    var parts = location.pathname.split('/').filter(Boolean);
+    var code = (parts[parts.length - 1] || '').toUpperCase();
+    var valid = /^[A-Z0-9]{5}$/.test(code);
+    var $ = function (id) { return document.getElementById(id); };
+
+    if (!valid) {
+      document.body.classList.add('bad');
+      $('title').textContent = 'This invite link is broken';
+      $('sub').textContent = 'Ask the group to send the link again, or to tell you the 5-letter code.';
+      ['code', 'open', 'copy'].forEach(function (id) { $(id).style.display = 'none'; });
+    } else {
+      $('code').textContent = code;
+      var isAndroid = /android/i.test(navigator.userAgent);
+      var fallback = location.origin + location.pathname + '#noapp';
+      // Android: an intent link opens the app if installed, else comes back here.
+      $('open').href = isAndroid
+        ? 'intent://join/' + code + '#Intent;scheme=bahinko;package=com.bahinko.app;' +
+          'S.browser_fallback_url=' + encodeURIComponent(fallback) + ';end'
+        : 'bahinko://join/' + code;
+      if (location.hash === '#noapp') $('noapp').style.display = 'block';
+      window.addEventListener('hashchange', function () {
+        if (location.hash === '#noapp') $('noapp').style.display = 'block';
+      });
+      $('copy').onclick = function () {
+        var done = function () { $('copy').textContent = 'Copied ' + code; };
+        if (navigator.clipboard) navigator.clipboard.writeText(code).then(done, done);
+        else done();
+      };
+    }
+  </script>
+</body>
+</html>

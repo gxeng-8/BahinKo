@@ -155,6 +155,6 @@ Screens never call Firebase directly. They use services (`GroupService.instance`
 
 ## Known limitations
 
-- Invite links (`bahinko.app/j/…`) don't open the app yet. Paste the code/link or scan the QR code instead.
+- Invite links (`bahinko-303f2.web.app/j/CODE`) open the app directly only on APKs signed with the key listed in `hosting/.well-known/assetlinks.json`. Other builds see the web page, whose **Open in BahinKo** button still opens the app.
 - GCash/Maya don't offer public links that pre-fill an amount; the amount is copied for you.
 - With anonymous accounts there's no "Forgot PIN?" recovery; clearing the app's data starts fresh.

@@ -310,7 +310,8 @@ String generateInviteCode() {
 }
 
 /// Reads an invite code from what the user typed, pasted, or scanned:
-/// a bare code ("dj7q2") or a full link ("https://bahinko.app/j/DJ7Q2").
+/// a bare code ("dj7q2"), a link ("https://bahinko-303f2.web.app/j/DJ7Q2"),
+/// or the app link ("bahinko://join/DJ7Q2").
 /// Returns the code in capitals, or null if it isn't a valid code.
 String? parseInviteCode(String input) {
   var text = input.trim().toUpperCase();

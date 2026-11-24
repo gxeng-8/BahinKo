@@ -262,7 +262,13 @@ class Group {
     return null;
   }
 
-  String get inviteLink => 'https://bahinko.app/j/$inviteCode';
+  /// Opens BahinKo straight to "Join" on phones that have the app, and a
+  /// small page with the code (and how to get the app) everywhere else.
+  /// Hosted free on Firebase Hosting (see hosting/ and firebase.json).
+  String get inviteLink => '$inviteLinkBase$inviteCode';
+
+  static const inviteLinkHost = 'bahinko-303f2.web.app';
+  static const inviteLinkBase = 'https://$inviteLinkHost/j/';
 
   /// Returns a copy with a different member list (groups are immutable).
   Group copyWith({List<Person>? members}) => Group(

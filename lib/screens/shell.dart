@@ -4,11 +4,13 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'package:bahinko/screens/group/join_group_screen.dart';
 import 'package:bahinko/screens/history/activity_history_screen.dart';
 import 'package:bahinko/screens/home/home_screen.dart';
 import 'package:bahinko/screens/scan/scan_receipt_screen.dart';
 import 'package:bahinko/screens/profile/profile_screen.dart';
 import 'package:bahinko/screens/stats/statistics_screen.dart';
+import 'package:bahinko/services/invite_links.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/utils/navigation.dart';
 
@@ -27,6 +29,29 @@ class _ShellState extends State<Shell> {
   static const _pages = [Home(), Statistics(), ActivityHistory(), Profile()];
 
   void _select(int index) => setState(() => tab = index);
+
+  @override
+  void initState() {
+    super.initState();
+    // An invite link may have opened the app, or may arrive later.
+    pendingInvite.addListener(_openInvite);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openInvite());
+  }
+
+  @override
+  void dispose() {
+    pendingInvite.removeListener(_openInvite);
+    super.dispose();
+  }
+
+  /// Tapped an invite link: open Join with the code filled in.
+  void _openInvite() {
+    if (!mounted || pendingInvite.value == null) return;
+    final code = takePendingInvite();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => JoinGroupScreen(initialCode: code)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(

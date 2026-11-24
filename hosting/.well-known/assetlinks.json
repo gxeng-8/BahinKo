@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.bahinko.app",
+      "sha256_cert_fingerprints": [
+        "15:76:A1:A6:BA:09:34:E3:C2:DC:7C:B9:58:CE:51:C1:7B:3B:C6:DA:7E:95:B6:74:BD:8E:B4:64:75:A2:0D:56"
+      ]
+    }
+  }
+]

@@ -53,6 +53,8 @@ void main() {
     expect(parseInviteCode('dj7q2'), 'DJ7Q2');
     expect(parseInviteCode('  https://bahinko.app/j/DJ7Q2 '), 'DJ7Q2');
     expect(parseInviteCode('bahinko.app/j/bh4k9/'), 'BH4K9');
+    expect(parseInviteCode('https://bahinko-303f2.web.app/j/NX3NP'), 'NX3NP');
+    expect(parseInviteCode('bahinko://join/nx3np'), 'NX3NP');
     expect(parseInviteCode('DJ7Q'), isNull); // too short
     expect(parseInviteCode('DJ0Q2'), isNull); // 0 isn't used in codes
     expect(parseInviteCode('hello world'), isNull);
