@@ -42,7 +42,8 @@ class AppLockScreen extends StatefulWidget {
 }
 
 class _AppLockScreenState extends State<AppLockScreen> {
-  static const _pinLength = 4;
+  /// 6 for new PINs; older 4-digit PINs still unlock.
+  int _pinLength = AppLockService.newPinLength;
   final _lock = AppLockService.instance;
 
   /// null while we check storage for a saved PIN (loading state).
@@ -75,6 +76,9 @@ class _AppLockScreenState extends State<AppLockScreen> {
   /// Async start-up: is there a saved PIN? a running lockout? fingerprint?
   Future<void> _load() async {
     final hasPin = await _lock.hasPin();
+    final length = hasPin
+        ? await _lock.pinLength()
+        : AppLockService.newPinLength;
     final remaining = await _lock.lockoutRemaining();
     final fingerprint =
         hasPin &&
@@ -83,6 +87,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     if (!mounted) return;
     setState(() {
       _mode = hasPin ? _LockMode.unlock : _LockMode.create;
+      _pinLength = length;
       _canUseFingerprint = fingerprint;
     });
     if (remaining != null) {
@@ -108,7 +113,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     setState(() => _entered = _entered.substring(0, _entered.length - 1));
   }
 
-  /// Runs when 4 digits are entered; what happens depends on the mode.
+  /// Runs when all digits are entered; what happens depends on the mode.
   Future<void> _onPinComplete() async {
     switch (_mode!) {
       case _LockMode.create:
@@ -196,10 +201,13 @@ class _AppLockScreenState extends State<AppLockScreen> {
   (String, String) get _texts => switch (_mode) {
     _LockMode.create => (
       'Create a PIN',
-      'Choose a 4-digit PIN to keep your balances private',
+      'Choose a $_pinLength-digit PIN to keep your balances private',
     ),
-    _LockMode.confirm => ('Confirm your PIN', 'Enter the same 4 digits again'),
-    _ => ('Welcome back', 'Enter your 4-digit PIN to open BahinKo'),
+    _LockMode.confirm => (
+      'Confirm your PIN',
+      'Enter the same $_pinLength digits again',
+    ),
+    _ => ('Welcome back', 'Enter your $_pinLength-digit PIN to open BahinKo'),
   };
 
   @override
@@ -255,7 +263,11 @@ class _AppLockScreenState extends State<AppLockScreen> {
         const SizedBox(height: 4),
         Text(subtitle, textAlign: TextAlign.center, style: AppText.caption),
         const SizedBox(height: 20),
-        _PinDots(filled: _entered.length, hasError: message != null),
+        _PinDots(
+          filled: _entered.length,
+          length: _pinLength,
+          hasError: message != null,
+        ),
         SizedBox(
           height: 32,
           child: message == null
@@ -294,11 +306,16 @@ class _AppLockScreenState extends State<AppLockScreen> {
   );
 }
 
-/// Four dots: filled green for each digit typed; red when there's an error.
+/// One dot per digit: filled green for each digit typed; red when there's an error.
 class _PinDots extends StatelessWidget {
-  const _PinDots({required this.filled, required this.hasError});
+  const _PinDots({
+    required this.filled,
+    required this.length,
+    required this.hasError,
+  });
 
   final int filled;
+  final int length;
   final bool hasError;
 
   @override
@@ -307,7 +324,7 @@ class _PinDots extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        for (var i = 0; i < 4; i++)
+        for (var i = 0; i < length; i++)
           AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             margin: const EdgeInsets.symmetric(horizontal: 6),

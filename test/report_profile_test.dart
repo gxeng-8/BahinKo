@@ -267,7 +267,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('logout')));
       await tester.pumpAndSettle();
       expect(
-        find.textContaining('will NOT be able to get back'),
+        find.textContaining('will NOT get your groups back'),
         findsOneWidget,
       );
       await tester.tap(find.text('Stay logged in'));

@@ -49,6 +49,7 @@ class AppLockService {
   // Storage keys.
   static const _hashKey = 'pin_hash';
   static const _saltKey = 'pin_salt';
+  static const _lengthKey = 'pin_length';
   static const _failsKey = 'pin_failed_attempts';
   static const _lockedUntilKey = 'pin_locked_until';
 
@@ -62,8 +63,17 @@ class AppLockService {
     final salt = _randomSalt();
     await _store.write(_saltKey, salt);
     await _store.write(_hashKey, _hash(salt, pin));
+    await _store.write(_lengthKey, '${pin.length}');
     await _resetAttempts();
   }
+
+  /// New PINs are 6 digits (they double as the account's sign-in PIN).
+  static const newPinLength = 6;
+
+  /// Digits in the saved PIN: 6, or 4 for PINs made before accounts.
+  Future<int> pinLength() async =>
+      int.tryParse(await _store.read(_lengthKey) ?? '') ??
+      (await hasPin() ? 4 : newPinLength);
 
   /// Checks [pin]. Counts wrong attempts and starts a lockout after
   /// [maxAttempts] wrong tries.
@@ -105,6 +115,7 @@ class AppLockService {
   Future<void> clearPin() async {
     await _store.delete(_hashKey);
     await _store.delete(_saltKey);
+    await _store.delete(_lengthKey);
     await _resetAttempts();
   }
 

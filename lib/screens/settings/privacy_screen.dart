@@ -7,6 +7,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'package:bahinko/screens/auth/account_screens.dart';
 import 'package:bahinko/screens/onboarding/onboarding_screen.dart';
 import 'package:bahinko/services/app_lock_service.dart';
 import 'package:bahinko/services/auth_service.dart';
@@ -29,8 +30,8 @@ class Privacy extends StatelessWidget {
       (
         Icons.shield_outlined,
         'What we collect',
-        'Your name, your groups, and their expenses and payments. Nothing '
-            'else: no email, no contacts, no location.',
+        'Your name, the username you pick, your groups, and their expenses '
+            'and payments. Nothing else: no email, no contacts, no location.',
       ),
       (
         Icons.document_scanner_outlined,
@@ -43,10 +44,11 @@ class Privacy extends StatelessWidget {
       (
         Icons.lock_outline,
         'Locked and encrypted',
-        // Firestore encrypts at rest + TLS; PIN = salted hash; WalletService.
+        // Firestore encrypts at rest + TLS; Firebase Auth hashes the PIN;
+        // AppLockService keeps a salted hash; WalletService.
         'Group data is encrypted in storage and in transit. Your PIN is '
-            'stored only as a scrambled hash, and your GCash/Maya numbers '
-            'stay encrypted on this phone.',
+            'stored only as a scrambled hash (never as the PIN itself), and '
+            'your GCash/Maya numbers stay encrypted on this phone.',
       ),
       (
         Icons.credit_card,
@@ -105,14 +107,25 @@ class DeleteMyDataCard extends StatefulWidget {
 class _DeleteMyDataCardState extends State<DeleteMyDataCard> {
   bool _deleting = false;
 
+  bool get _hasSavedAccount {
+    try {
+      return AuthService.instance.hasSavedAccount;
+    } catch (_) {
+      return false; // no Firebase (tests)
+    }
+  }
+
   Future<void> _start() async {
-    final ok = await showDialog<bool>(
+    final pin = await showDialog<String>(
       context: context,
-      builder: (_) => const _ConfirmDeleteDialog(),
+      builder: (_) => _ConfirmDeleteDialog(needsPin: _hasSavedAccount),
     );
-    if (ok != true || !mounted) return;
+    if (pin == null || !mounted) return;
     setState(() => _deleting = true);
     try {
+      // Saved accounts: Firebase only deletes after a fresh PIN check.
+      // Done FIRST, so a wrong PIN changes nothing.
+      if (pin.isNotEmpty) await AuthService.instance.confirmPin(pin);
       final settings = SettingsService.instance;
       if (settings.offlineMode) {
         await GroupService.instance.setOffline(false); // must reach server
@@ -122,6 +135,15 @@ class _DeleteMyDataCardState extends State<DeleteMyDataCard> {
       await WalletService.instance.clear();
       await settings.clear();
       await AuthService.instance.deleteAccount();
+    } on AuthFailure catch (e) {
+      if (mounted) {
+        setState(() => _deleting = false);
+        showAppToast(
+          context,
+          e.message == 'Wrong username or PIN.' ? 'Wrong PIN.' : e.message,
+        );
+      }
+      return;
     } on GroupFailure catch (e) {
       if (mounted) {
         setState(() => _deleting = false);
@@ -195,7 +217,10 @@ class _DeleteMyDataCardState extends State<DeleteMyDataCard> {
 
 /// Explains exactly what happens; needs a tick before Delete works.
 class _ConfirmDeleteDialog extends StatefulWidget {
-  const _ConfirmDeleteDialog();
+  const _ConfirmDeleteDialog({required this.needsPin});
+
+  /// Saved accounts must type their PIN (returned to the caller).
+  final bool needsPin;
 
   @override
   State<_ConfirmDeleteDialog> createState() => _ConfirmDeleteDialogState();
@@ -203,6 +228,15 @@ class _ConfirmDeleteDialog extends StatefulWidget {
 
 class _ConfirmDeleteDialogState extends State<_ConfirmDeleteDialog> {
   bool _understood = false;
+  final _pin = TextEditingController();
+
+  @override
+  void dispose() {
+    _pin.dispose();
+    super.dispose();
+  }
+
+  bool get _ready => _understood && (!widget.needsPin || _pin.text.length >= 4);
 
   @override
   Widget build(BuildContext context) => AlertDialog(
@@ -216,7 +250,7 @@ class _ConfirmDeleteDialogState extends State<_ConfirmDeleteDialog> {
         const Text('• remove you from every group'),
         const Text('• delete groups where you are the only app user'),
         const Text('• erase your PIN, wallet numbers and settings'),
-        const Text('• delete your BahinKo account'),
+        const Text('• delete your BahinKo account and username'),
         const SizedBox(height: 8),
         const Text(
           "Expenses and payments you shared stay in the others' groups, "
@@ -234,16 +268,25 @@ class _ConfirmDeleteDialogState extends State<_ConfirmDeleteDialog> {
             style: TextStyle(fontSize: 13),
           ),
         ),
+        if (widget.needsPin)
+          PinField(
+            key: const ValueKey('delete-pin'),
+            controller: _pin,
+            label: 'Your PIN',
+            onChanged: (_) => setState(() {}),
+          ),
       ],
     ),
     actions: [
       TextButton(
-        onPressed: () => Navigator.pop(context, false),
+        onPressed: () => Navigator.pop(context),
         child: const Text('Cancel'),
       ),
       FilledButton(
         key: const ValueKey('delete-confirm'),
-        onPressed: _understood ? () => Navigator.pop(context, true) : null,
+        onPressed: _ready
+            ? () => Navigator.pop(context, widget.needsPin ? _pin.text : '')
+            : null,
         style: FilledButton.styleFrom(backgroundColor: errorFg),
         child: const Text('Delete everything'),
       ),

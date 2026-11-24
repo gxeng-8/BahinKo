@@ -7,26 +7,20 @@
 /// * Big pieces are split into small private widgets (_Logo, _PerksCard)
 ///   so build() stays short and readable.
 ///
-/// "Get Started" signs the user in anonymously (AuthService) and shows a
-/// loading state on the button and an error toast if sign-in fails.
+/// "Get Started" opens Create account (name, @username, PIN); "I already
+/// have an account" opens Sign in, so a reinstall gets the same account.
 library;
 
 import 'package:flutter/material.dart';
 
-import 'package:bahinko/screens/auth/your_name_screen.dart';
-import 'package:bahinko/services/auth_service.dart';
+import 'package:bahinko/screens/auth/account_screens.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
-import 'package:bahinko/widgets/app_toast.dart';
 import 'package:bahinko/widgets/btn.dart';
 import 'package:bahinko/widgets/app_logo.dart';
 
 class Onboarding extends StatefulWidget {
-  const Onboarding({super.key, this.signIn});
-
-  /// The sign-in call. Defaults to [AuthService.signIn]; tests pass a fake
-  /// so they can check the loading and error states without Firebase.
-  final Future<void> Function()? signIn;
+  const Onboarding({super.key});
 
   /// Selling points listed in the translucent card.
   static const perks = [
@@ -41,30 +35,8 @@ class Onboarding extends StatefulWidget {
 }
 
 class _OnboardingState extends State<Onboarding> {
-  /// True while sign-in is running: the button shows "Getting ready…"
-  /// and is disabled so a double tap can't sign in twice.
-  bool _loading = false;
-
-  /// Signs in, then asks for the user's name (then the PIN). On failure,
-  /// shows the error and re-enables the button so the user can retry.
-  Future<void> _getStarted() async {
-    setState(() => _loading = true);
-    try {
-      await (widget.signIn ?? AuthService.instance.signIn)();
-      // The user may have left the screen during the await; using
-      // `context` on a closed screen would crash, so check first.
-      if (!mounted) return;
-      // pushReplacement: users can't go "back" to onboarding.
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const YourNameScreen()),
-      );
-    } on AuthFailure catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      showAppToast(context, e.message); // error state
-    }
-  }
+  void _open(Widget page) =>
+      Navigator.push(context, MaterialPageRoute(builder: (_) => page));
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -100,9 +72,20 @@ class _OnboardingState extends State<Onboarding> {
                   const _PerksCard(perks: Onboarding.perks),
                   const Spacer(),
                   Btn(
-                    _loading ? 'Getting ready…' : 'Get Started',
-                    _loading ? null : _getStarted, // null = disabled
+                    'Get Started',
+                    () => _open(const CreateAccountScreen()),
                     color: Colors.white,
+                  ),
+                  TextButton(
+                    key: const ValueKey('have-account'),
+                    onPressed: () => _open(const SignInScreen()),
+                    child: const Text(
+                      'I already have an account',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   const Row(

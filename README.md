@@ -12,7 +12,7 @@ BahinKo is a Flutter app for groups (barkadas, dormmates, boarding houses) who s
 
 | Feature | Status |
 |---|---|
-| Sign in (anonymous, no email/password), your name, 4-digit app lock with fingerprint | ✅ |
+| Accounts: name + @username + 6-digit PIN (sign back in after log out / reinstall / new phone), app lock with the same PIN or fingerprint | ✅ |
 | Create groups from templates, invite by **QR code / link / code**, add guests without the app | ✅ |
 | Live group data shared between phones (Firebase), with loading / empty / error states | ✅ |
 | **AI receipt scanner**: on-device OCR + Gemini item extraction, "Needs review" flags, editable items, fallbacks ([spec](docs/AI_FEATURE_SPEC.md)) | ✅ |
@@ -119,7 +119,7 @@ Screens never call Firebase directly. They use services (`GroupService.instance`
 
 ## Backend & security
 
-- **Firebase Authentication (anonymous):** no email or phone collected, only a first name (Data Privacy Act, RA 10173).
+- **Firebase Authentication (username + PIN):** the username is turned into a made-up address for Firebase's Email/Password sign-in, so no real email or phone is collected (Data Privacy Act, RA 10173). Firebase stores the PIN only as a hash and blocks rapid guessing. **Setup:** Firebase console > Authentication > Sign-in method > enable **Email/Password**. Older phone-only (anonymous) accounts can be saved from Profile and keep their groups.
 - **Cloud Firestore**, with rules in [`firestore.rules`](firestore.rules):
   - only group members can read or change a group;
   - joining requires the group's invite code and lets you add only yourself;
@@ -157,4 +157,4 @@ Screens never call Firebase directly. They use services (`GroupService.instance`
 
 - Invite links (`bahinko-303f2.web.app/j/CODE`) open the app directly only on APKs signed with the key listed in `hosting/.well-known/assetlinks.json`. Other builds see the web page, whose **Open in BahinKo** button still opens the app.
 - GCash/Maya don't offer public links that pre-fill an amount; the amount is copied for you.
-- With anonymous accounts there's no "Forgot PIN?" recovery; clearing the app's data starts fresh.
+- There's no "Forgot PIN?" (that would need an email or phone number). A forgotten PIN means a new account; a 6-digit PIN is also weaker than a full password, which is the trade-off for being easy to type.

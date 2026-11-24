@@ -111,13 +111,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Create a PIN'), findsOneWidget);
 
-    await _typePin(tester, '1234');
+    await _typePin(tester, '482915');
     expect(find.text('Confirm your PIN'), findsOneWidget);
-    await _typePin(tester, '9999');
+    await _typePin(tester, '999111');
     expect(find.text("PINs don't match. Try again."), findsOneWidget);
 
-    await _typePin(tester, '1234');
-    await _typePin(tester, '1234');
+    await _typePin(tester, '482915');
+    await _typePin(tester, '482915');
     expect(find.byType(Shell), findsOneWidget);
   });
 

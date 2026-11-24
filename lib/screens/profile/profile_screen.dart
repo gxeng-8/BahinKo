@@ -26,6 +26,8 @@ import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/utils/navigation.dart';
 import 'package:bahinko/widgets/app_toast.dart';
 import 'package:bahinko/widgets/wallet_logo.dart';
+import 'package:bahinko/screens/auth/account_screens.dart';
+import 'package:bahinko/utils/validators.dart';
 
 class Profile extends StatefulWidget {
   const Profile({super.key});
@@ -65,9 +67,46 @@ class _ProfileState extends State<Profile> {
     }
   }
 
-  /// "Juan dela Cruz" → "@juandelacruz".
-  String get _handle =>
-      '@${_name.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '')}';
+  /// "@yumi" for a saved account; otherwise made from the name.
+  String get _handle {
+    final saved = _username;
+    return saved != null
+        ? '@$saved'
+        : '@${_name.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '')}';
+  }
+
+  /// The account's username, or null (not saved yet, or no Firebase).
+  String? get _username {
+    try {
+      return AuthService.instance.username;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Signed in at all? (false in widget tests without Firebase)
+  bool get _hasFirebaseUser {
+    try {
+      return AuthService.instance.isSignedIn;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// True if this account can be signed back into with username + PIN.
+  bool get _saved => _username != null;
+
+  /// "Save your account" (older, phone-only accounts).
+  Future<void> _saveAccount() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => const _SaveAccountDialog(),
+    );
+    if (ok == true && mounted) {
+      setState(() {});
+      showAppToast(context, 'Account saved. Sign in with @$_username.');
+    }
+  }
 
   // ---------- Wallet numbers ----------
 
@@ -115,6 +154,15 @@ class _ProfileState extends State<Profile> {
   }
 
   Future<void> _changePin() async {
+    if (_saved) {
+      // The PIN is also the sign-in PIN: change both together.
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => const _ChangePinDialog(),
+      );
+      if (ok == true && mounted) showAppToast(context, 'PIN changed');
+      return;
+    }
     if (!await _verifyPin()) return;
     await _createPin();
     if (mounted) showAppToast(context, 'PIN changed');
@@ -281,11 +329,13 @@ class _ProfileState extends State<Profile> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Log out?'),
-        content: const Text(
-          'Your BahinKo account is tied to this phone (no email or '
-          'password). If you log out, you will NOT be able to get back '
-          'into your groups, even on this phone. Your groups and their '
-          'expenses stay for the other members.',
+        content: Text(
+          _saved
+              ? 'You can sign back in any time with @$_username and your '
+                    'PIN, on this phone or a new one.'
+              : 'This account is only on this phone. If you log out you '
+                    'will NOT get your groups back. Save your account '
+                    'first (Profile > Save your account).',
         ),
         actions: [
           TextButton(
@@ -375,6 +425,10 @@ class _ProfileState extends State<Profile> {
                   ],
                 ),
                 const SizedBox(height: 14),
+                if (!_saved && _hasFirebaseUser) ...[
+                  _SaveAccountBanner(onTap: _saveAccount),
+                  const SizedBox(height: 12),
+                ],
                 Row(
                   children: [
                     for (final p in WalletService.providers) ...[
@@ -664,6 +718,236 @@ class _WalletDialogState extends State<_WalletDialog> {
           }
         },
         child: const Text('Save'),
+      ),
+    ],
+  );
+}
+
+/// Orange card for older accounts that only live on this phone.
+class _SaveAccountBanner extends StatelessWidget {
+  const _SaveAccountBanner({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: const Color(0xFFFFF4E5),
+    borderRadius: BorderRadius.circular(12),
+    child: InkWell(
+      key: const ValueKey('save-account'),
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: const Padding(
+        padding: EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Color(0xFFB45309)),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Save your account: pick a username and PIN so you can '
+                'sign back in after logging out or reinstalling.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF8A4B00)),
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Color(0xFFB45309)),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Username + new 6-digit PIN for an older, phone-only account.
+class _SaveAccountDialog extends StatefulWidget {
+  const _SaveAccountDialog();
+
+  @override
+  State<_SaveAccountDialog> createState() => _SaveAccountDialogState();
+}
+
+class _SaveAccountDialogState extends State<_SaveAccountDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _username = TextEditingController();
+  final _pin = TextEditingController();
+  final _pin2 = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _username.dispose();
+    _pin.dispose();
+    _pin2.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await AuthService.instance.saveAccount(
+        username: normalizeUsername(_username.text),
+        pin: _pin.text,
+      );
+      // The same PIN now also unlocks the app on this phone.
+      await AppLockService.instance.setPin(_pin.text);
+      if (mounted) Navigator.pop(context, true);
+    } on AuthFailure catch (e) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = e.message;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Save your account'),
+    content: Form(
+      key: _formKey,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Keeps your groups. Your new PIN also unlocks the app.',
+              style: AppText.caption,
+            ),
+            const SizedBox(height: 8),
+            UsernameField(
+              key: const ValueKey('save-username'),
+              controller: _username,
+            ),
+            PinField(
+              key: const ValueKey('save-pin'),
+              controller: _pin,
+              label: 'New 6-digit PIN',
+              validator: validateNewPin,
+            ),
+            PinField(
+              key: const ValueKey('save-pin2'),
+              controller: _pin2,
+              label: 'Enter the PIN again',
+              validator: (v) => v != _pin.text ? "PINs don't match" : null,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: const TextStyle(color: errorFg)),
+            ],
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: _saving ? null : () => Navigator.pop(context, false),
+        child: const Text('Later'),
+      ),
+      FilledButton(
+        key: const ValueKey('save-account-submit'),
+        onPressed: _saving ? null : _save,
+        child: Text(_saving ? 'Saving…' : 'Save'),
+      ),
+    ],
+  );
+}
+
+/// Current PIN + new PIN (changes the sign-in PIN and the app lock).
+class _ChangePinDialog extends StatefulWidget {
+  const _ChangePinDialog();
+
+  @override
+  State<_ChangePinDialog> createState() => _ChangePinDialogState();
+}
+
+class _ChangePinDialogState extends State<_ChangePinDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _old = TextEditingController();
+  final _new = TextEditingController();
+  final _new2 = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _old.dispose();
+    _new.dispose();
+    _new2.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await AuthService.instance.changePin(
+        oldPin: _old.text,
+        newPin: _new.text,
+      );
+      await AppLockService.instance.setPin(_new.text);
+      if (mounted) Navigator.pop(context, true);
+    } on AuthFailure catch (e) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = e.message == 'Wrong username or PIN.'
+              ? 'Your current PIN is wrong.'
+              : e.message;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Change PIN'),
+    content: Form(
+      key: _formKey,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PinField(
+              controller: _old,
+              label: 'Current PIN',
+              validator: (v) =>
+                  (v ?? '').length < 4 ? 'Enter your current PIN' : null,
+            ),
+            PinField(
+              controller: _new,
+              label: 'New 6-digit PIN',
+              validator: validateNewPin,
+            ),
+            PinField(
+              controller: _new2,
+              label: 'Enter the new PIN again',
+              validator: (v) => v != _new.text ? "PINs don't match" : null,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: const TextStyle(color: errorFg)),
+            ],
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: _saving ? null : () => Navigator.pop(context, false),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: _saving ? null : _save,
+        child: Text(_saving ? 'Saving…' : 'Change'),
       ),
     ],
   );
