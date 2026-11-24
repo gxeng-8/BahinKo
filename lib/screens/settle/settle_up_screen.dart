@@ -37,6 +37,7 @@ import 'package:bahinko/widgets/btn.dart';
 import 'package:bahinko/widgets/info_banner.dart';
 import 'package:bahinko/widgets/pill.dart';
 import 'package:bahinko/widgets/section_header.dart';
+import 'package:bahinko/widgets/wallet_logo.dart';
 
 class SettleUp extends StatefulWidget {
   /// Settle the group [groupId]. If null (e.g. from Home), the user picks
@@ -258,6 +259,9 @@ class _SettleUpState extends State<SettleUp> {
           ActivityEvent(
             type: 'reminder',
             actorName: me.name,
+            actorId: me.id,
+            forIds: [from.id],
+            amountCents: cents,
             text: 'Reminder sent to ${from.name}',
           ),
         )
@@ -538,6 +542,8 @@ class _LedgerBody extends StatelessWidget {
                   child: Btn(
                     'Pay with GCash',
                     () => onPayWithApp(to, left, 'GCash'),
+                    leading: const WalletLogo('GCash', size: 22),
+                    outlined: true,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -545,6 +551,7 @@ class _LedgerBody extends StatelessWidget {
                   child: Btn(
                     'Pay with Maya',
                     () => onPayWithApp(to, left, 'Maya'),
+                    leading: const WalletLogo('Maya', size: 18),
                     outlined: true,
                   ),
                 ),

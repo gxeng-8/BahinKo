@@ -255,6 +255,8 @@ class InMemoryGroupService extends GroupService {
             type: e.type,
             text: e.text,
             actorName: e.actorName,
+            actorId: e.actorId.isEmpty ? myUid : e.actorId,
+            forIds: e.forIds,
             amountCents: e.amountCents,
             oldCents: e.oldCents,
             newCents: e.newCents,
@@ -310,6 +312,7 @@ class InMemoryGroupService extends GroupService {
       ActivityEvent(
         type: 'expense',
         actorName: 'You',
+        forIds: expense.shares.keys.toList(),
         text: 'You added ${expense.title}',
         amountCents: expense.amountCents,
       ),
@@ -339,6 +342,7 @@ class InMemoryGroupService extends GroupService {
       ActivityEvent(
         type: 'edit',
         actorName: 'You',
+        forIds: {...old.shares.keys, ...updated.shares.keys}.toList(),
         text: 'You edited ${updated.title}',
         oldCents: changed ? old.amountCents : null,
         newCents: changed ? updated.amountCents : null,
@@ -364,6 +368,7 @@ class InMemoryGroupService extends GroupService {
       ActivityEvent(
         type: 'edit',
         actorName: 'You',
+        forIds: expense.shares.keys.toList(),
         text: 'You deleted ${expense.title}',
         amountCents: expense.amountCents,
       ),
@@ -403,6 +408,8 @@ class InMemoryGroupService extends GroupService {
       ActivityEvent(
         type: 'payment',
         actorName: payment.fromName,
+        actorId: payment.fromId,
+        forIds: [payment.toId],
         text: '${payment.fromName} paid ${payment.toName}',
         amountCents: payment.amountCents,
       ),
@@ -447,6 +454,8 @@ class InMemoryGroupService extends GroupService {
       ActivityEvent(
         type: 'confirm',
         actorName: p.toName,
+        actorId: p.toId,
+        forIds: [p.fromId],
         text: "${p.toName} confirmed ${p.fromName}'s payment",
         amountCents: p.amountCents,
       ),

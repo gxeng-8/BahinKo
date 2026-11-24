@@ -209,6 +209,7 @@ class FirestoreGroupService extends GroupService {
             ActivityEvent(
               type: 'join',
               actorName: yourName,
+              actorId: uid,
               text: '$yourName joined the group',
             ),
           ),
@@ -301,6 +302,8 @@ class FirestoreGroupService extends GroupService {
           ActivityEvent(
             type: 'expense',
             actorName: _myName,
+            actorId: _uid,
+            forIds: expense.shares.keys.toList(),
             text: '$_myName added ${expense.title}',
             amountCents: expense.amountCents,
           ),
@@ -335,6 +338,8 @@ class FirestoreGroupService extends GroupService {
           ActivityEvent(
             type: 'edit',
             actorName: _myName,
+            actorId: _uid,
+            forIds: {...old.shares.keys, ...updated.shares.keys}.toList(),
             text: '$_myName edited ${updated.title}',
             oldCents: changed ? old.amountCents : null,
             newCents: changed ? updated.amountCents : null,
@@ -358,6 +363,8 @@ class FirestoreGroupService extends GroupService {
           ActivityEvent(
             type: 'edit',
             actorName: _myName,
+            actorId: _uid,
+            forIds: expense.shares.keys.toList(),
             text: '$_myName deleted ${expense.title}',
             amountCents: expense.amountCents,
           ),
@@ -404,6 +411,8 @@ class FirestoreGroupService extends GroupService {
           ActivityEvent(
             type: 'payment',
             actorName: payment.fromName,
+            actorId: _uid,
+            forIds: [payment.toId],
             text: '${payment.fromName} paid ${payment.toName}',
             amountCents: payment.amountCents,
           ),
@@ -428,6 +437,8 @@ class FirestoreGroupService extends GroupService {
           ActivityEvent(
             type: 'confirm',
             actorName: payment.toName,
+            actorId: _uid,
+            forIds: [payment.fromId],
             text: "${payment.toName} confirmed ${payment.fromName}'s payment",
             amountCents: payment.amountCents,
           ),

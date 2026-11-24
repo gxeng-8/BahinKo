@@ -19,6 +19,7 @@ import 'package:bahinko/models/person.dart';
 import 'package:bahinko/models/recurring_bill.dart';
 import 'package:bahinko/utils/settle_calculator.dart';
 import 'package:bahinko/utils/stream_utils.dart';
+import 'package:bahinko/utils/notifications.dart';
 
 abstract class GroupService {
   /// The service the whole app uses. main() replaces it with Firestore.
@@ -237,6 +238,11 @@ abstract class GroupService {
         );
         return all;
       });
+
+  /// The bell: activity from all my groups that is about me and made by
+  /// someone else, newest first (see utils/notifications.dart).
+  Stream<List<({Group group, ActivityEvent event})>> watchNotifications() =>
+      watchAllActivity().map((all) => notificationsFor(all, myId));
 }
 
 /// Checks an expense before saving. Throws [GroupFailure] with a message

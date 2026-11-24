@@ -122,6 +122,8 @@ class ActivityEvent {
     required this.type,
     required this.text,
     this.actorName = '',
+    this.actorId = '',
+    this.forIds = const [],
     this.amountCents,
     this.oldCents,
     this.newCents,
@@ -137,6 +139,12 @@ class ActivityEvent {
   /// Ready-to-show sentence: "Jun edited Soju".
   final String text;
   final String actorName;
+
+  /// Who did it, and who it concerns (e.g. the person reminded, the payer
+  /// whose payment was confirmed). Used for the bell's notifications.
+  /// Empty on entries saved before notifications existed.
+  final String actorId;
+  final List<String> forIds;
   final int? amountCents;
 
   /// For edits: old and new price (shown as ₱420 → ₱450 chips).
@@ -147,6 +155,8 @@ class ActivityEvent {
     'type': type,
     'text': text,
     'actorName': actorName,
+    'actorId': actorId,
+    'forIds': forIds,
     'amountCents': amountCents,
     'oldCents': oldCents,
     'newCents': newCents,
@@ -161,6 +171,8 @@ class ActivityEvent {
     type: m['type'] as String? ?? 'edit',
     text: m['text'] as String? ?? '',
     actorName: m['actorName'] as String? ?? '',
+    actorId: m['actorId'] as String? ?? '',
+    forIds: List<String>.from(m['forIds'] as List? ?? const []),
     amountCents: (m['amountCents'] as num?)?.toInt(),
     oldCents: (m['oldCents'] as num?)?.toInt(),
     newCents: (m['newCents'] as num?)?.toInt(),

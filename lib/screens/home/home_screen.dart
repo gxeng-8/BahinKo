@@ -10,13 +10,19 @@ import 'package:bahinko/screens/group/create_group_screen.dart';
 import 'package:bahinko/screens/group/group_detail_screen.dart';
 import 'package:bahinko/screens/group/join_group_screen.dart';
 import 'package:bahinko/screens/history/activity_history_screen.dart';
+import 'package:bahinko/screens/notifications/notifications_screen.dart';
+import 'package:bahinko/screens/profile/profile_screen.dart';
 import 'package:bahinko/screens/scan/scan_receipt_screen.dart';
 import 'package:bahinko/screens/settle/settle_up_screen.dart';
+import 'package:bahinko/screens/shell.dart';
+import 'package:bahinko/services/auth_service.dart';
 import 'package:bahinko/services/group_service.dart';
+import 'package:bahinko/services/settings_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/utils/currency.dart';
 import 'package:bahinko/utils/navigation.dart';
+import 'package:bahinko/utils/notifications.dart';
 import 'package:bahinko/widgets/async_state_view.dart';
 import 'package:bahinko/widgets/icon_tile.dart';
 import 'package:bahinko/widgets/pill.dart';
@@ -109,6 +115,39 @@ class _BalanceHeaderState extends State<_BalanceHeader> {
       .instance
       .watchMyTotals();
 
+  /// The bell's badge: my notifications newer than the last visit.
+  late final Stream<List<GroupEvent>> _notifications = GroupService.instance
+      .watchNotifications();
+
+  /// Opens the bell list; when back, the badge recounts (now read).
+  Future<void> _openNotifications() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
+    );
+    if (mounted) setState(() {});
+  }
+
+  /// Person icon → the Profile tab (or the Profile page outside the shell).
+  void _openProfile() {
+    final shell = context.findAncestorStateOfType<ShellState>();
+    if (shell != null) {
+      shell.select(Shell.profileTab);
+    } else {
+      go(context, const Profile());
+    }
+  }
+
+  /// First letter of my name, or null (then a person icon is shown).
+  String? get _initial {
+    try {
+      final name = AuthService.instance.displayName?.trim() ?? '';
+      return name.isEmpty ? null : name[0].toUpperCase();
+    } catch (_) {
+      return null; // Firebase not started (tests)
+    }
+  }
+
   @override
   Widget build(BuildContext context) =>
       StreamBuilder<({int owedToYou, int youOwe})>(
@@ -130,8 +169,28 @@ class _BalanceHeaderState extends State<_BalanceHeader> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _HeaderIcon(Icons.person_outline, onTap: () {}),
-                    _HeaderIcon(Icons.notifications_none, onTap: () {}),
+                    _HeaderIcon(
+                      Icons.person_outline,
+                      key: const ValueKey('home-profile'),
+                      tooltip: 'Profile',
+                      letter: _initial,
+                      onTap: _openProfile,
+                    ),
+                    StreamBuilder<List<GroupEvent>>(
+                      stream: _notifications,
+                      builder: (context, snap) => _HeaderIcon(
+                        Icons.notifications_none,
+                        key: const ValueKey('home-bell'),
+                        tooltip: 'Notifications',
+                        badge: badgeLabel(
+                          unreadCount(
+                            snap.data ?? const [],
+                            SettingsService.instance.notificationsSeenAt,
+                          ),
+                        ),
+                        onTap: _openNotifications,
+                      ),
+                    ),
                   ],
                 ),
                 const Text(
@@ -163,23 +222,82 @@ class _BalanceHeaderState extends State<_BalanceHeader> {
 }
 
 /// Small translucent round icon button used in the green header.
+/// [letter] replaces the icon (my initial); [badge] adds a red count
+/// ("3", "9+") on the corner.
 class _HeaderIcon extends StatelessWidget {
-  const _HeaderIcon(this.icon, {required this.onTap});
+  const _HeaderIcon(
+    this.icon, {
+    super.key,
+    required this.onTap,
+    required this.tooltip,
+    this.letter,
+    this.badge,
+  });
 
   final IconData icon;
   final VoidCallback onTap;
+  final String tooltip;
+  final String? letter;
+  final String? badge;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white24,
-    shape: const CircleBorder(),
-    child: InkWell(
-      customBorder: const CircleBorder(),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Icon(icon, color: Colors.white, size: 20),
-      ),
+  Widget build(BuildContext context) => Tooltip(
+    message: badge == null ? tooltip : '$tooltip ($badge new)',
+    child: Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Material(
+          color: Colors.white24,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onTap,
+            child: SizedBox(
+              width: 36,
+              height: 36,
+              child: Center(
+                child: letter == null
+                    ? Icon(icon, color: Colors.white, size: 20)
+                    : Text(
+                        letter!,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ),
+        if (badge != null)
+          Positioned(
+            top: -4,
+            right: -6,
+            child: IgnorePointer(
+              child: Container(
+                key: const ValueKey('bell-badge'),
+                constraints: const BoxConstraints(minWidth: 20),
+                height: 20,
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: errorFg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+                child: Text(
+                  badge!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     ),
   );
 }

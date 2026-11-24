@@ -17,18 +17,23 @@ import 'package:bahinko/utils/navigation.dart';
 class Shell extends StatefulWidget {
   const Shell({super.key});
 
+  /// Tab indexes, for [ShellState.select].
+  static const profileTab = 3;
+
   @override
-  State<Shell> createState() => _ShellState();
+  State<Shell> createState() => ShellState();
 }
 
-class _ShellState extends State<Shell> {
+/// Public so screens inside a tab can switch tabs (Home's person icon →
+/// Profile) with `context.findAncestorStateOfType<ShellState>()`.
+class ShellState extends State<Shell> {
   /// Index of the selected tab (0 = Home).
   int tab = 0;
 
   /// The page for each tab, in the same order as the nav buttons.
   static const _pages = [Home(), Statistics(), ActivityHistory(), Profile()];
 
-  void _select(int index) => setState(() => tab = index);
+  void select(int index) => setState(() => tab = index);
 
   @override
   void initState() {
@@ -88,26 +93,26 @@ class _ShellState extends State<Shell> {
             icon: Icons.home_outlined,
             label: 'Home',
             selected: tab == 0,
-            onTap: () => _select(0),
+            onTap: () => select(0),
           ),
           _NavItem(
             icon: Icons.bar_chart,
             label: 'Stats',
             selected: tab == 1,
-            onTap: () => _select(1),
+            onTap: () => select(1),
           ),
           const SizedBox(width: 48), // space for the scan button notch
           _NavItem(
             icon: Icons.receipt_long_outlined,
             label: 'History',
             selected: tab == 2,
-            onTap: () => _select(2),
+            onTap: () => select(2),
           ),
           _NavItem(
             icon: Icons.person_outline,
             label: 'Profile',
             selected: tab == 3,
-            onTap: () => _select(3),
+            onTap: () => select(3),
           ),
         ],
       ),

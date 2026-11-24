@@ -81,6 +81,18 @@ class SettingsService {
     }
   }
 
+  /// When the notifications list was last opened (bell badge counts what
+  /// came after). Null = never opened.
+  DateTime? get notificationsSeenAt {
+    final ms = _prefs?.getInt('notifications_seen_at');
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> setNotificationsSeenAt(DateTime when) async {
+    await load();
+    await _prefs!.setInt('notifications_seen_at', when.millisecondsSinceEpoch);
+  }
+
   /// When offline mode was turned on (= the last sync), or null.
   DateTime? get offlineSince {
     final ms = _prefs?.getInt('offline_since');

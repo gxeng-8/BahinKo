@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:bahinko/utils/currency.dart';
 import 'package:bahinko/models/person.dart';
 import 'package:bahinko/theme/app_colors.dart';
+import 'package:bahinko/widgets/wallet_logo.dart';
 
 class PaymentOpeningDialog extends StatelessWidget {
   const PaymentOpeningDialog({
@@ -32,15 +33,12 @@ class PaymentOpeningDialog extends StatelessWidget {
           Container(
             width: 72,
             height: 72,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
               color: mint,
               borderRadius: BorderRadius.circular(18),
             ),
-            child: const Icon(
-              Icons.account_balance_wallet_outlined,
-              color: green,
-              size: 36,
-            ),
+            child: WalletLogo(provider, size: provider == 'Maya' ? 26 : 44),
           ),
           const SizedBox(height: 20),
           Text(

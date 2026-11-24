@@ -19,6 +19,9 @@ class Btn extends StatelessWidget {
   final Color? color;
   final IconData? icon;
 
+  /// Optional widget before the text instead of [icon] (e.g. a wallet logo).
+  final Widget? leading;
+
   const Btn(
     this.text,
     this.onTap, {
@@ -26,6 +29,7 @@ class Btn extends StatelessWidget {
     this.outlined = false,
     this.color,
     this.icon,
+    this.leading,
   });
 
   @override
@@ -38,7 +42,10 @@ class Btn extends StatelessWidget {
     final label = Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        if (icon != null) ...[
+        if (leading != null) ...[
+          leading!,
+          const SizedBox(width: 8),
+        ] else if (icon != null) ...[
           Icon(icon, size: 18, color: fg),
           const SizedBox(width: 8),
         ],

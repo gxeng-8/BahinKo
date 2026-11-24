@@ -25,6 +25,7 @@ import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/utils/navigation.dart';
 import 'package:bahinko/widgets/app_toast.dart';
+import 'package:bahinko/widgets/wallet_logo.dart';
 
 class Profile extends StatefulWidget {
   const Profile({super.key});
@@ -511,12 +512,8 @@ class _ProfileState extends State<Profile> {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           child: Row(
             children: [
-              const Icon(
-                Icons.account_balance_wallet_outlined,
-                size: 16,
-                color: deep,
-              ),
-              const SizedBox(width: 6),
+              WalletLogo(provider, size: 20),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   number == null

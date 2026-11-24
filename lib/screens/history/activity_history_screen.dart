@@ -9,16 +9,14 @@ library;
 
 import 'package:flutter/material.dart';
 
-import 'package:bahinko/models/group.dart';
 import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/utils/currency.dart';
+import 'package:bahinko/utils/notifications.dart' show GroupEvent;
 import 'package:bahinko/widgets/app_page.dart';
 import 'package:bahinko/widgets/async_state_view.dart';
 import 'package:bahinko/widgets/box.dart';
-
-typedef GroupEvent = ({Group group, ActivityEvent event});
 
 /// Filter chips → which event types they show.
 const activityFilters = <String, Set<String>>{

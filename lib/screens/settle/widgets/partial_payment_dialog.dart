@@ -14,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/utils/currency.dart';
+import 'package:bahinko/widgets/wallet_logo.dart';
 
 typedef PartialPayment = ({int cents, String method});
 
@@ -136,7 +137,11 @@ class _PartialPaymentDialogState extends State<_PartialPaymentDialog> {
               showSelectedIcon: false,
               segments: [
                 for (final m in widget.methods)
-                  ButtonSegment(value: m, label: Text(m)),
+                  ButtonSegment(
+                    value: m,
+                    icon: WalletLogo(m, size: m == 'Maya' ? 12 : 16),
+                    label: Text(m),
+                  ),
               ],
               selected: {_method},
               onSelectionChanged: (s) => setState(() => _method = s.first),
