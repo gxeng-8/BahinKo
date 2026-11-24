@@ -15,6 +15,7 @@ import 'package:bahinko/screens/bill/split_summary_screen.dart';
 import 'package:bahinko/screens/group/invite_members_screen.dart';
 import 'package:bahinko/screens/group/members_screen.dart';
 import 'package:bahinko/screens/history/activity_history_screen.dart';
+import 'package:bahinko/screens/report/report_preview_screen.dart';
 import 'package:bahinko/screens/settle/settle_up_screen.dart';
 import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
@@ -87,6 +88,12 @@ class _GroupDetailState extends State<GroupDetail> {
           },
         ),
         actions: [
+          if (ledger != null)
+            IconButton(
+              tooltip: 'Report',
+              icon: const Icon(Icons.description_outlined),
+              onPressed: () => go(context, ReportPreview(groupId: id)),
+            ),
           if (ledger != null)
             IconButton(
               tooltip: 'Invite',

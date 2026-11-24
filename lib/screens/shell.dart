@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:bahinko/screens/history/activity_history_screen.dart';
 import 'package:bahinko/screens/home/home_screen.dart';
 import 'package:bahinko/screens/scan/scan_receipt_screen.dart';
-import 'package:bahinko/screens/settings/privacy_screen.dart';
+import 'package:bahinko/screens/profile/profile_screen.dart';
 import 'package:bahinko/screens/stats/statistics_screen.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/utils/navigation.dart';
@@ -24,8 +24,7 @@ class _ShellState extends State<Shell> {
   int tab = 0;
 
   /// The page for each tab, in the same order as the nav buttons.
-  /// TODO(M3): replace Privacy() with ProfileScreen() when Frame 24 is done.
-  static const _pages = [Home(), Statistics(), ActivityHistory(), Privacy()];
+  static const _pages = [Home(), Statistics(), ActivityHistory(), Profile()];
 
   void _select(int index) => setState(() => tab = index);
 

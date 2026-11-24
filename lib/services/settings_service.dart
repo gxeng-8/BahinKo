@@ -45,7 +45,39 @@ class SettingsService {
   bool get autoDeleteReceipts => _get('auto_delete_receipts', true);
   Future<void> setAutoDeleteReceipts(bool v) => _set('auto_delete_receipts', v);
 
+  /// Reminder tone (Profile → Reminder settings): 'Polite', 'Friendly'
+  /// or 'Direct'. Default: Polite (BahinKo never shames anyone).
+  String get reminderTone => _prefs?.getString('reminder_tone') ?? 'Polite';
+  Future<void> setReminderTone(String v) async {
+    await load();
+    await _prefs!.setString('reminder_tone', v);
+  }
+
+  /// Remind this many days before a recurring bill is due. Default: 3.
+  int get reminderDaysBefore => _prefs?.getInt('reminder_days') ?? 3;
+  Future<void> setReminderDaysBefore(int v) async {
+    await load();
+    await _prefs!.setInt('reminder_days', v);
+  }
+
   /// Offline mode toggle (Profile, Frame 24). Default: off.
   bool get offlineMode => _get('offline_mode', false);
-  Future<void> setOfflineMode(bool v) => _set('offline_mode', v);
+  Future<void> setOfflineMode(bool v) async {
+    await _set('offline_mode', v);
+    // Remember when we stopped syncing ("Last synced 2 min ago").
+    if (v) {
+      await _prefs!.setInt(
+        'offline_since',
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } else {
+      await _prefs!.remove('offline_since');
+    }
+  }
+
+  /// When offline mode was turned on (= the last sync), or null.
+  DateTime? get offlineSince {
+    final ms = _prefs?.getInt('offline_since');
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
 }

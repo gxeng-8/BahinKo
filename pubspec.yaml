@@ -49,6 +49,7 @@ dependencies:
   crypto: ^3.0.8
   firebase_ai: ^5.2.0
   firebase_app_check: ^0.5.2
+  pdf: ^3.13.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

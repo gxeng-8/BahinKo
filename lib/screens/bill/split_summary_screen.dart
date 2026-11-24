@@ -1,6 +1,10 @@
 /// Figma Frame 11 "Split Summary": a saved expense shown as a receipt,
 /// with what each person pays. Loaded live from [GroupService], so edits
 /// and new members show up immediately.
+///
+/// ✎ Edit opens the expense in Add Expense (edit mode); 🗑 Delete removes it
+/// after a confirmation. Both are logged in the activity feed, so the group
+/// can always see who changed what.
 library;
 
 import 'package:flutter/material.dart';
@@ -9,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:bahinko/data/in_memory_group_service.dart' show demoGroupId;
 import 'package:bahinko/models/group.dart';
 import 'package:bahinko/models/person.dart';
+import 'package:bahinko/screens/bill/add_expense_screen.dart';
 import 'package:bahinko/screens/settle/settle_up_screen.dart';
 import 'package:bahinko/services/group_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
@@ -77,6 +82,42 @@ class _SplitSummaryState extends State<SplitSummary> {
     }
   }
 
+  /// Asks first, then deletes and goes back.
+  Future<void> _delete(GroupExpense e) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete ${e.title}?'),
+        content: Text(
+          'This removes the ${formatMoney(e.amountCents)} expense for '
+          'everyone in the group and recalculates who owes what. Payments '
+          'already recorded are kept. The group will see that you deleted it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('confirm-delete'),
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: errorFg),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await GroupService.instance.deleteExpense(widget.groupId, e);
+      if (!mounted) return;
+      Navigator.pop(context);
+      showAppToast(context, 'Deleted ${e.title}');
+    } on GroupFailure catch (err) {
+      if (mounted) showAppToast(context, err.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => StreamBuilder<Group>(
     stream: _group,
@@ -102,6 +143,36 @@ class _SplitSummaryState extends State<SplitSummary> {
                 tooltip: 'Share',
                 icon: const Icon(Icons.share_outlined),
                 onPressed: () => _share(group, expense),
+              ),
+            if (group != null && expense != null && expense.id.isNotEmpty)
+              PopupMenuButton<String>(
+                key: const ValueKey('expense-menu'),
+                tooltip: 'Edit or delete',
+                onSelected: (action) => action == 'edit'
+                    ? go(
+                        context,
+                        AddExpense(groupId: widget.groupId, editing: expense),
+                      )
+                    : _delete(expense),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'edit',
+                    child: ListTile(
+                      leading: Icon(Icons.edit_outlined),
+                      title: Text('Edit expense'),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: ListTile(
+                      leading: Icon(Icons.delete_outline, color: errorFg),
+                      title: Text(
+                        'Delete expense',
+                        style: TextStyle(color: errorFg),
+                      ),
+                    ),
+                  ),
+                ],
               ),
           ],
           bottom: group == null

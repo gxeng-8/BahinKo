@@ -66,6 +66,7 @@ class InMemoryGroupService extends GroupService {
         unpaidCount: 3,
         category: 'Dinner',
         icon: Icons.restaurant_outlined,
+        spentOn: DateTime(2026, 10, 28),
         shares: const {
           'me': 47000,
           'mia': 32000,
@@ -82,7 +83,7 @@ class InMemoryGroupService extends GroupService {
           ExpenseItem(name: 'VAT', amountCents: 35000),
         ],
       ),
-      const GroupExpense(
+      GroupExpense(
         id: 'milktea',
         title: 'Milk Tea Run',
         paidBy: 'Mia',
@@ -92,7 +93,8 @@ class InMemoryGroupService extends GroupService {
         unpaidCount: 0,
         category: 'Dinner',
         icon: Icons.local_cafe_outlined,
-        shares: {'mia': 15000, 'me': 15000, 'jun': 15000},
+        spentOn: DateTime(2026, 10, 28),
+        shares: const {'mia': 15000, 'me': 15000, 'jun': 15000},
       ),
     ],
   };
@@ -297,23 +299,7 @@ class InMemoryGroupService extends GroupService {
   Future<String> addExpense(String groupId, GroupExpense expense) async {
     checkExpense(expense);
     final id = _newId('expense');
-    final saved = GroupExpense(
-      id: id,
-      title: expense.title,
-      paidBy: expense.paidBy,
-      paidById: expense.paidById,
-      splitWays: expense.splitWays,
-      amountCents: expense.amountCents,
-      unpaidCount: expense.unpaidCount,
-      icon: expense.icon,
-      category: expense.category,
-      items: expense.items,
-      shares: expense.shares,
-      source: expense.source,
-      splitMode: expense.splitMode,
-      spentOn: expense.spentOn,
-      createdAt: DateTime.now(),
-    );
+    final saved = expense.copyWith(id: id, createdAt: DateTime.now());
     _updateGroup(
       groupId,
       (g) => _withTotals(g, total: expense.amountCents, count: 1),
@@ -330,6 +316,59 @@ class InMemoryGroupService extends GroupService {
     );
     _notifyAll();
     return id;
+  }
+
+  @override
+  Future<void> updateExpense(
+    String groupId,
+    GroupExpense old,
+    GroupExpense updated,
+  ) async {
+    checkExpense(updated);
+    final list = _expenses[groupId] ?? [];
+    final i = list.indexWhere((x) => x.id == old.id);
+    if (i == -1) throw const GroupFailure('This expense was deleted.');
+    list[i] = updated.copyWith(id: old.id, createdAt: list[i].createdAt);
+    _updateGroup(
+      groupId,
+      (g) => _withTotals(g, total: updated.amountCents - old.amountCents),
+    );
+    final changed = old.amountCents != updated.amountCents;
+    _log(
+      groupId,
+      ActivityEvent(
+        type: 'edit',
+        actorName: 'You',
+        text: 'You edited ${updated.title}',
+        oldCents: changed ? old.amountCents : null,
+        newCents: changed ? updated.amountCents : null,
+      ),
+    );
+    _notifyAll();
+  }
+
+  @override
+  Future<void> deleteExpense(String groupId, GroupExpense expense) async {
+    final list = _expenses[groupId] ?? [];
+    final before = list.length;
+    list.removeWhere((x) => x.id == expense.id);
+    if (list.length == before) {
+      throw const GroupFailure('This expense was already deleted.');
+    }
+    _updateGroup(
+      groupId,
+      (g) => _withTotals(g, total: -expense.amountCents, count: -1),
+    );
+    _log(
+      groupId,
+      ActivityEvent(
+        type: 'edit',
+        actorName: 'You',
+        text: 'You deleted ${expense.title}',
+        amountCents: expense.amountCents,
+      ),
+    );
+    _notifyAll();
   }
 
   // ---------- Payments ----------
@@ -400,21 +439,7 @@ class InMemoryGroupService extends GroupService {
       final e = expenses.indexWhere((x) => x.id == p.expenseId);
       if (e != -1) {
         final x = expenses[e];
-        expenses[e] = GroupExpense(
-          id: x.id,
-          title: x.title,
-          paidBy: x.paidBy,
-          paidById: x.paidById,
-          splitWays: x.splitWays,
-          amountCents: x.amountCents,
-          unpaidCount: x.unpaidCount - 1,
-          icon: x.icon,
-          category: x.category,
-          items: x.items,
-          shares: x.shares,
-          source: x.source,
-          createdAt: x.createdAt,
-        );
+        expenses[e] = x.copyWith(unpaidCount: x.unpaidCount - 1);
       }
     }
     _log(

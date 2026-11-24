@@ -310,6 +310,66 @@ class FirestoreGroupService extends GroupService {
     return doc.id;
   }
 
+  @override
+  Future<void> updateExpense(
+    String groupId,
+    GroupExpense old,
+    GroupExpense updated,
+  ) async {
+    checkExpense(updated);
+    final changed = old.amountCents != updated.amountCents;
+    final batch = _db.batch()
+      // update() (not set) keeps createdBy / createdAt as they were.
+      ..update(_sub(groupId, 'expenses').doc(old.id), {
+        ...updated.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      })
+      ..update(_groups.doc(groupId), {
+        'totalCents': FieldValue.increment(
+          updated.amountCents - old.amountCents,
+        ),
+      })
+      ..set(
+        _sub(groupId, 'activity').doc(),
+        _activity(
+          ActivityEvent(
+            type: 'edit',
+            actorName: _myName,
+            text: '$_myName edited ${updated.title}',
+            oldCents: changed ? old.amountCents : null,
+            newCents: changed ? updated.amountCents : null,
+          ),
+        ),
+      );
+    await _commit(batch);
+  }
+
+  @override
+  Future<void> deleteExpense(String groupId, GroupExpense expense) async {
+    final batch = _db.batch()
+      ..delete(_sub(groupId, 'expenses').doc(expense.id))
+      ..update(_groups.doc(groupId), {
+        'totalCents': FieldValue.increment(-expense.amountCents),
+        'expenseCount': FieldValue.increment(-1),
+      })
+      ..set(
+        _sub(groupId, 'activity').doc(),
+        _activity(
+          ActivityEvent(
+            type: 'edit',
+            actorName: _myName,
+            text: '$_myName deleted ${expense.title}',
+            amountCents: expense.amountCents,
+          ),
+        ),
+      );
+    await _commit(batch);
+  }
+
+  @override
+  Future<void> setOffline(bool offline) =>
+      offline ? _db.disableNetwork() : _db.enableNetwork();
+
   // ---------- Payments ----------
 
   @override

@@ -132,6 +132,29 @@ class GroupExpense {
 
   bool get fromAi => source == 'ai';
 
+  /// The day to show: the Date field, or when it was saved.
+  DateTime? get date => spentOn ?? createdAt;
+
+  /// A copy with some fields changed (expenses are immutable).
+  GroupExpense copyWith({String? id, int? unpaidCount, DateTime? createdAt}) =>
+      GroupExpense(
+        id: id ?? this.id,
+        title: title,
+        paidBy: paidBy,
+        paidById: paidById,
+        splitWays: splitWays,
+        amountCents: amountCents,
+        unpaidCount: unpaidCount ?? this.unpaidCount,
+        icon: icon,
+        category: category,
+        items: items,
+        shares: shares,
+        source: source,
+        splitMode: splitMode,
+        spentOn: spentOn,
+        createdAt: createdAt ?? this.createdAt,
+      );
+
   Map<String, dynamic> toMap() => {
     'title': title,
     'paidBy': paidBy,

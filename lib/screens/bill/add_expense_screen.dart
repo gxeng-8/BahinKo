@@ -9,6 +9,10 @@
 ///
 /// Opened from Group Detail / Home ("+ Add Expense"), or from Assign Items
 /// with the scanned receipt's [items] to split them item by item.
+///
+/// EDIT mode: pass [editing] (from Split Summary's ✎ button). The form
+/// opens filled in with that expense, its split rebuilt from the saved
+/// shares, and "Save Changes" updates it in place (logged as an edit).
 library;
 
 import 'package:flutter/material.dart';
@@ -43,7 +47,8 @@ class AddExpense extends StatefulWidget {
     this.title,
     this.items,
     this.source = 'manual',
-  });
+    this.editing,
+  }) : assert(editing == null || groupId != null, 'Editing needs groupId');
 
   /// The group to save into. If null, the user chooses one.
   final String? groupId;
@@ -56,13 +61,18 @@ class AddExpense extends StatefulWidget {
   /// 'ai' if the items came from the AI scanner.
   final String source;
 
+  /// The saved expense to change (edit mode), or null to add a new one.
+  final GroupExpense? editing;
+
   @override
   State<AddExpense> createState() => _AddExpenseState();
 }
 
 class _AddExpenseState extends State<AddExpense> {
   final _formKey = GlobalKey<FormState>();
-  late final _title = TextEditingController(text: widget.title ?? '');
+  late final _title = TextEditingController(
+    text: widget.editing?.title ?? widget.title ?? '',
+  );
   final _amount = TextEditingController();
   late final Stream<List<Group>> _groups;
 
@@ -91,10 +101,62 @@ class _AddExpenseState extends State<AddExpense> {
     super.initState();
     _groups = GroupService.instance.watchMyGroups();
     _groupId = widget.groupId;
-    _items = widget.items?.toList() ?? [];
-    _mode = _items.isEmpty ? SplitMode.equal : SplitMode.byItem;
-    if (_items.isNotEmpty) _amount.text = _plain(_itemsTotal);
+    final e = widget.editing;
+    if (e != null) {
+      _items = e.items.toList();
+      _mode = SplitMode.fromName(e.splitMode);
+      _amount.text = _plain(e.amountCents);
+      _date = DateUtils.dateOnly(e.date ?? DateTime.now());
+      _category = e.category;
+    } else {
+      _items = widget.items?.toList() ?? [];
+      _mode = _items.isEmpty ? SplitMode.equal : SplitMode.byItem;
+      if (_items.isNotEmpty) _amount.text = _plain(_itemsTotal);
+    }
   }
+
+  bool get _isEdit => widget.editing != null;
+
+  /// Edit mode: fills the per-member inputs from the saved shares, so
+  /// every tab shows the expense as it was saved.
+  void _fillFromSaved(GroupExpense e) {
+    final shares = e.shares;
+    _included
+      ..clear()
+      ..addAll(shares.keys);
+    for (final s in shares.entries) {
+      _exact[s.key]?.text = _plain(s.value);
+    }
+    final bp = splitByWeights(10000, shares); // back to percents
+    for (final s in bp.entries) {
+      _percent[s.key]?.text = _plainPercent(s.value);
+    }
+    if (e.paidById.isNotEmpty && _exact.containsKey(e.paidById)) {
+      _payerId = e.paidById;
+    }
+    // Saved as "equal" but the amounts differ by more than a centavo (old
+    // or imported data): show the real amounts instead of re-splitting.
+    if (_mode == SplitMode.equal && shares.isNotEmpty) {
+      final values = shares.values.toList()..sort();
+      if (values.last - values.first > 1) _mode = SplitMode.exact;
+    }
+    if (_mode == SplitMode.shares) {
+      // Shares: find the weights again (₱400 / ₱200 → 2 : 1). If they
+      // can't be found exactly, show the saved amounts on "Exact" instead.
+      final unit = shares.values.fold(0, _gcd);
+      final ok = unit > 0 && shares.values.every((v) => v ~/ unit <= 20);
+      if (ok) {
+        _weights.updateAll((id, _) => (shares[id] ?? 0) ~/ unit);
+      } else {
+        _mode = SplitMode.exact;
+      }
+    }
+  }
+
+  static int _gcd(int a, int b) => b == 0 ? a : _gcd(b, a % b);
+
+  /// Set once the saved expense has been loaded into the inputs.
+  bool _filled = false;
 
   @override
   void dispose() {
@@ -144,6 +206,10 @@ class _AddExpenseState extends State<AddExpense> {
       _weights[m.id] = 1;
       _exact[m.id] = TextEditingController();
       _percent[m.id] = TextEditingController();
+    }
+    if (widget.editing != null && !_filled) {
+      _filled = true;
+      _fillFromSaved(widget.editing!);
     }
   }
 
@@ -341,14 +407,33 @@ class _AddExpenseState extends State<AddExpense> {
       paidByName: payer.name,
       amountCents: _totalCents,
       shares: split.shares!,
-      items: _mode == SplitMode.byItem ? _items : (widget.items ?? const []),
+      items: _mode == SplitMode.byItem
+          ? _items
+          : (widget.items ?? widget.editing?.items ?? const []),
       category: _category ?? group.category.name,
-      source: widget.source,
+      source: widget.editing?.source ?? widget.source,
       splitMode: _mode.name,
       spentOn: _date,
     );
 
     setState(() => _saving = true);
+    if (_isEdit) {
+      try {
+        await GroupService.instance.updateExpense(
+          group.id,
+          widget.editing!,
+          expense,
+        );
+        if (!mounted) return;
+        Navigator.pop(context); // back to the (live) Split Summary
+        showAppToast(context, 'Changes saved');
+      } on GroupFailure catch (e) {
+        if (!mounted) return;
+        setState(() => _saving = false);
+        showAppToast(context, e.message);
+      }
+      return;
+    }
     try {
       final id = await GroupService.instance.addExpense(group.id, expense);
       if (!mounted) return;
@@ -400,7 +485,7 @@ class _AddExpenseState extends State<AddExpense> {
             );
       if (group != null && group.members.isNotEmpty) _setUp(group);
       return AppPage(
-        'Add Expense',
+        _isEdit ? 'Edit Expense' : 'Add Expense',
         AsyncStateView<List<Group>>(
           snapshot: snapshot,
           isEmpty: (list) => list.isEmpty,
@@ -409,7 +494,7 @@ class _AddExpenseState extends State<AddExpense> {
           builder: (_) => _form(groups, group!),
         ),
         actions: [
-          if (widget.items == null)
+          if (widget.items == null && !_isEdit)
             IconButton(
               tooltip: 'Scan a receipt instead',
               icon: const Icon(Icons.document_scanner_outlined),
@@ -417,7 +502,7 @@ class _AddExpenseState extends State<AddExpense> {
             ),
         ],
         bottom: Btn(
-          _saving ? 'Saving…' : 'Save Expense',
+          _saving ? 'Saving…' : (_isEdit ? 'Save Changes' : 'Save Expense'),
           group == null || _saving ? null : () => _save(group),
           key: const ValueKey('save-expense'),
         ),

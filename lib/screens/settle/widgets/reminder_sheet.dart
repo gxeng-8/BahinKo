@@ -2,9 +2,23 @@
 library;
 
 import 'package:flutter/material.dart';
+
+import 'package:bahinko/services/settings_service.dart';
 import 'package:bahinko/utils/currency.dart';
 import 'package:bahinko/models/person.dart';
 import 'package:bahinko/widgets/avatar.dart';
+
+/// The starting reminder text for each tone. Always kind: no amounts in
+/// big letters, no shaming (the user can still edit it before sending).
+String reminderMessage(String name, String tone) => switch (tone) {
+  'Friendly' =>
+    'Hey $name! Quick nudge to settle your share in BahinKo '
+        'when you get the chance. Salamat!',
+  'Direct' => 'Hi $name, please settle your share in BahinKo today. Thanks.',
+  _ =>
+    'Hi $name! Just a friendly reminder to settle your share when you '
+        'can. Thank you!',
+};
 
 class ReminderSheet extends StatefulWidget {
   const ReminderSheet({
@@ -31,8 +45,11 @@ class _ReminderSheetState extends State<ReminderSheet> {
   void initState() {
     super.initState();
     _messageController = TextEditingController(
-      text:
-          'Hi ${widget.member.name}! Just a friendly reminder to settle your share for dinner.',
+      // Tone chosen in Profile → Reminder settings.
+      text: reminderMessage(
+        widget.member.name,
+        SettingsService.instance.reminderTone,
+      ),
     );
   }
 

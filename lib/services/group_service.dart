@@ -65,6 +65,19 @@ abstract class GroupService {
   /// [GroupFailure] if it's invalid (see [checkExpense]). Returns its ID.
   Future<String> addExpense(String groupId, GroupExpense expense);
 
+  /// Replaces expense [old] with [updated] (same ID), fixes the group's
+  /// total, and logs "Renz edited Samgyup House" (with old → new amount).
+  /// Balances recalculate by themselves. Throws [GroupFailure] if invalid.
+  Future<void> updateExpense(
+    String groupId,
+    GroupExpense old,
+    GroupExpense updated,
+  );
+
+  /// Deletes [expense], takes it out of the group's totals, and logs it.
+  /// Payments already recorded are kept (they are real money that moved).
+  Future<void> deleteExpense(String groupId, GroupExpense expense);
+
   // ---------- Payments (M4 Settle Up) ----------
 
   /// All payments in the group, newest first.
@@ -97,6 +110,12 @@ abstract class GroupService {
   Stream<List<RecurringBill>> watchRecurring(String groupId);
   Future<void> addRecurring(String groupId, RecurringBill bill);
   Future<void> setRecurringEnabled(String groupId, String billId, bool enabled);
+
+  // ---------- Offline mode (Profile, Frame 24) ----------
+
+  /// Offline: stop talking to the server. Changes are kept on the phone
+  /// and sent when you go back online. Does nothing where unsupported.
+  Future<void> setOffline(bool offline) async {}
 
   // ---------- Balances (Settle Up, Home, Group Detail) ----------
 
