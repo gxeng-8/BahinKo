@@ -1,34 +1,28 @@
-/// Figma frame 1 "Onboarding": first-run welcome screen.
-///
-/// REFERENCE SCREEN: shows how to build a screen from the design system.
-/// * Colors come from theme/app_colors.dart (never raw hex in screens).
-/// * Fonts come from AppText in theme/app_theme.dart.
-/// * Buttons use the shared [Btn] widget.
-/// * Big pieces are split into small private widgets (_Logo, _PerksCard)
-///   so build() stays short and readable.
+/// Welcome screen (first run / after logging out), drawn to match the
+/// team's design: deep-green background with two circles, the logo tile,
+/// "BahinKo", the tagline, the BahinKo mascot peeking up, and a white
+/// "Get Started" button.
 ///
 /// "Get Started" opens Create account (name, @username, PIN); "I already
 /// have an account" opens Sign in, so a reinstall gets the same account.
+///
+/// Sizes are fractions of the screen width so it looks the same on small
+/// and large phones. The mascot and logo tile are images cut from the
+/// design (assets/onboarding/).
 library;
 
 import 'package:flutter/material.dart';
 
 import 'package:bahinko/screens/auth/account_screens.dart';
-import 'package:bahinko/theme/app_colors.dart';
-import 'package:bahinko/theme/app_theme.dart';
-import 'package:bahinko/widgets/btn.dart';
-import 'package:bahinko/widgets/app_logo.dart';
+
+/// Colours sampled from the design.
+const _background = Color(0xFF026D46);
+const _lightCircle = Color(0xFF239065);
+const _darkCircle = Color(0xFF01442B);
+const _buttonText = Color(0xFF12794B);
 
 class Onboarding extends StatefulWidget {
   const Onboarding({super.key});
-
-  /// Selling points listed in the translucent card.
-  static const perks = [
-    'Scan receipts and list items automatically',
-    'Assign who ordered what',
-    'Track payments and send polite reminders',
-    'Settle with GCash or Maya',
-  ];
 
   @override
   State<Onboarding> createState() => _OnboardingState();
@@ -40,41 +34,118 @@ class _OnboardingState extends State<Onboarding> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: Container(
-      decoration: const BoxDecoration(gradient: brandGradient),
-      child: Stack(
-        children: [
-          // Decorative soft circles in the top-right corner (from Figma).
-          const Positioned(top: -60, right: -60, child: _Circle(220)),
-          const Positioned(top: 90, right: -90, child: _Circle(160)),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 48, 24, 16),
+    backgroundColor: _background,
+    body: LayoutBuilder(
+      builder: (context, box) {
+        final w = box.maxWidth;
+        // The mascot keeps its real proportions, but gives way on very
+        // short screens so the buttons always fit.
+        final mascotHeight = (w * 551 / 841).clamp(0.0, box.maxHeight * 0.32);
+        return Stack(
+          children: [
+            // Light circle in the top-left, dark one on the top-right.
+            Positioned(
+              left: w * 0.15 - w * 0.38,
+              top: -w * 0.13 - w * 0.38,
+              child: _Circle(w * 0.76, _lightCircle),
+            ),
+            Positioned(
+              left: w - w * 0.26,
+              top: w * 0.13 - w * 0.26,
+              child: _Circle(w * 0.52, _darkCircle),
+            ),
+            SafeArea(
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const _Logo(),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Bahinko nang tama, bayad nang kaunti.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
+                  // Same split of empty space as the design: more above
+                  // the logo than between the text and the mascot.
+                  const Spacer(flex: 22),
+                  Center(
+                    child: Image.asset(
+                      'assets/onboarding/logo_tile.png',
+                      width: w * 0.245,
+                      semanticLabel: 'BahinKo logo',
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Split bills with friends without the awkward math',
+                  SizedBox(height: w * 0.02),
+                  Text(
+                    'BahinKo',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      fontSize: w * 0.118,
+                      height: 1.1,
+                    ),
                   ),
-                  const SizedBox(height: 28),
-                  const _PerksCard(perks: Onboarding.perks),
-                  const Spacer(),
-                  Btn(
-                    'Get Started',
-                    () => _open(const CreateAccountScreen()),
-                    color: Colors.white,
+                  SizedBox(height: w * 0.07),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'BahinKo nang tama, bayad nang kaunti.',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          fontSize: w * 0.042,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: w * 0.02),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Split bills with friends without the awkward math',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.white.withValues(alpha: 0.92),
+                          fontSize: w * 0.037,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Spacer(flex: 10),
+                  // The mascot, edge to edge.
+                  SizedBox(
+                    height: mascotHeight,
+                    child: Image.asset(
+                      'assets/onboarding/mascot.png',
+                      width: w,
+                      fit: BoxFit.contain,
+                      alignment: Alignment.bottomCenter,
+                      semanticLabel: 'BahinKo mascot',
+                    ),
+                  ),
+                  SizedBox(height: w * 0.045),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: w * 0.055),
+                    child: SizedBox(
+                      height: 54,
+                      child: FilledButton(
+                        key: const ValueKey('get-started'),
+                        onPressed: () => _open(const CreateAccountScreen()),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: _buttonText,
+                          shape: const StadiumBorder(),
+                        ),
+                        child: const Text(
+                          'Get Started',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 18,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                   TextButton(
                     key: const ValueKey('have-account'),
@@ -87,103 +158,28 @@ class _OnboardingState extends State<Onboarding> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.lock_outline, size: 12, color: Colors.white70),
-                      SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          'We never hold your money. Payments redirect to GCash or Maya.',
-                          style: TextStyle(color: Colors.white70, fontSize: 10),
-                        ),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(height: 4),
                 ],
               ),
             ),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     ),
   );
 }
 
-/// White app-icon tile next to the "BahinKo" wordmark.
-class _Logo extends StatelessWidget {
-  const _Logo();
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: [
-      const AppLogo(size: 56),
-      const SizedBox(width: 12),
-      Text('BahinKo', style: AppText.display(36, color: Colors.white)),
-    ],
-  );
-}
-
-/// Translucent card listing the app's main features with check marks.
-class _PerksCard extends StatelessWidget {
-  const _PerksCard({required this.perks});
-
-  final List<String> perks;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.white24),
-    ),
-    child: Column(
-      children: [
-        for (final perk in perks)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(
-              children: [
-                Container(
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: lime,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Icon(Icons.check, size: 16, color: deep),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    perk,
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    ),
-  );
-}
-
-/// Faint white circle used as background decoration.
+/// A plain filled circle (background decoration).
 class _Circle extends StatelessWidget {
-  const _Circle(this.size);
+  const _Circle(this.size, this.color);
 
   final double size;
+  final Color color;
 
   @override
   Widget build(BuildContext context) => Container(
     width: size,
     height: size,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      color: Colors.white.withValues(alpha: 0.06),
-    ),
+    decoration: BoxDecoration(shape: BoxShape.circle, color: color),
   );
 }
