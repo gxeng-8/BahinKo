@@ -163,7 +163,9 @@ class ReceiptScanner {
 /// so the scanner falls back. Otherwise marks shaky items "Needs review"
 /// and warns when the items don't add up to the receipt's total.
 ScanResult? reviewAiReceipt(AiReceipt answer) {
-  final named = answer.items.where((i) => i.name.isNotEmpty).toList();
+  // Drop lines that aren't things people ordered, even if the AI listed
+  // them: dates, OR/receipt numbers, table no., totals, cash, change…
+  final named = answer.items.where((i) => !looksLikeNonItem(i.name)).toList();
   if (named.isEmpty) return null;
   final missingPrice = named.where((i) => i.priceCents <= 0).length;
   if (missingPrice * 2 > named.length) return null; // mostly unreadable

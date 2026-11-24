@@ -103,8 +103,14 @@ Extract:
   If you had to guess ANY digit of the price (e.g. "1?5", "15S"), the
   confidence MUST be below 0.6. If only the name was unclear, use 0.6-0.8.
 
-Ignore: subtotal, cash tendered, change, table numbers, item codes,
-addresses, TIN/VAT registration numbers, dates, and thank-you messages.
+ONLY things a customer ordered are items. A price is money for that item,
+usually written with centavos (125.00). NEVER turn these into items, even
+though they contain numbers: dates, times, OR / SI / invoice / receipt
+numbers, transaction / reference / order numbers, table numbers, number of
+guests (pax), cashier or server names and IDs, terminal / POS / MIN / serial
+/ PTU / accreditation numbers, TIN, phone numbers, "No. of items" counts,
+subtotal, total, cash tendered, change, VATable sales, VAT-exempt sales,
+item codes, addresses, and thank-you messages.
 Never invent items that aren't in the text. If the text is not a receipt,
 return an empty items list.
 ''';
