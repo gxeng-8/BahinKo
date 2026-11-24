@@ -19,6 +19,7 @@ import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/widgets/app_toast.dart';
 import 'package:bahinko/widgets/btn.dart';
+import 'package:bahinko/widgets/app_logo.dart';
 
 class Onboarding extends StatefulWidget {
   const Onboarding({super.key, this.signIn});
@@ -135,15 +136,7 @@ class _Logo extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     mainAxisAlignment: MainAxisAlignment.center,
     children: [
-      Container(
-        width: 52,
-        height: 52,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: const Icon(Icons.receipt_long, color: green, size: 30),
-      ),
+      const AppLogo(size: 56),
       const SizedBox(width: 12),
       Text('BahinKo', style: AppText.display(36, color: Colors.white)),
     ],

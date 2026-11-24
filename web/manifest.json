@@ -3,7 +3,7 @@
     "short_name": "BahinKo",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0A9B7A",
+    "background_color": "#CBE1D3",
     "theme_color": "#0A9B7A",
     "description": "Split bills with friends: scan a receipt, split it fairly, settle up.",
     "orientation": "portrait-primary",

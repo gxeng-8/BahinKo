@@ -22,6 +22,7 @@ import 'package:bahinko/services/settings_service.dart';
 import 'package:bahinko/theme/app_colors.dart';
 import 'package:bahinko/theme/app_theme.dart';
 import 'package:bahinko/widgets/app_toast.dart';
+import 'package:bahinko/widgets/app_logo.dart';
 
 enum _LockMode { create, confirm, unlock }
 
@@ -248,14 +249,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     child: Column(
       children: [
         const Spacer(),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: mint,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: const Icon(Icons.receipt_long, color: green, size: 28),
-        ),
+        const AppLogo(size: 60),
         const SizedBox(height: 16),
         Text(title, style: AppText.display(26, color: ink)),
         const SizedBox(height: 4),
