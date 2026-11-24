@@ -90,6 +90,17 @@ class AuthService {
   /// so the Profile screen should warn before calling it.
   Future<void> signOut() => _auth.signOut();
 
+  /// Deletes the account itself (Privacy → Delete my data). Falls back to
+  /// signing out if Firebase refuses (e.g. it wants a recent sign-in).
+  Future<void> deleteAccount() async {
+    try {
+      await _auth.currentUser?.delete().timeout(timeout);
+    } catch (_) {
+      // The groups are already left; at least end the session.
+    }
+    await _auth.signOut();
+  }
+
   AuthFailure _toFailure(FirebaseAuthException e) => AuthFailure(
     e.code == 'network-request-failed'
         ? 'No internet connection. Connect and try again.'

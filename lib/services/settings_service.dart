@@ -33,6 +33,12 @@ class SettingsService {
     await _prefs!.setBool(key, value);
   }
 
+  /// Erases every saved setting (Privacy → Delete my data).
+  Future<void> clear() async {
+    await load();
+    await _prefs!.clear();
+  }
+
   /// Ask for the PIN when the app opens / comes back. Default: on.
   bool get appLockEnabled => _get('app_lock_enabled', true);
   Future<void> setAppLockEnabled(bool v) => _set('app_lock_enabled', v);

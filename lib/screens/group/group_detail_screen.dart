@@ -15,6 +15,7 @@ import 'package:bahinko/screens/bill/split_summary_screen.dart';
 import 'package:bahinko/screens/group/invite_members_screen.dart';
 import 'package:bahinko/screens/group/members_screen.dart';
 import 'package:bahinko/screens/history/activity_history_screen.dart';
+import 'package:bahinko/screens/recurring/recurring_bills_screen.dart';
 import 'package:bahinko/screens/report/report_preview_screen.dart';
 import 'package:bahinko/screens/settle/settle_up_screen.dart';
 import 'package:bahinko/services/group_service.dart';
@@ -147,6 +148,23 @@ class _GroupBody extends StatelessWidget {
           onAction: () => go(context, Members(groupId: group.id)),
         ),
         _MemberStrip(group: group),
+        Box(
+          onTap: () => go(context, RecurringBills(groupId: group.id)),
+          const Row(
+            children: [
+              Icon(Icons.event_repeat, color: green),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Recurring bills',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              Text('Rent, WiFi, utilities', style: AppText.caption),
+              Icon(Icons.chevron_right, color: muted),
+            ],
+          ),
+        ),
         const SizedBox(height: 8),
         const SectionHeader('Expenses'),
         if (ledger.expenses.isEmpty)
@@ -175,7 +193,7 @@ class _GroupBody extends StatelessWidget {
         SectionHeader(
           'Activity',
           actionText: 'See all',
-          onAction: () => go(context, const ActivityHistory()),
+          onAction: () => go(context, ActivityHistory(groupId: group.id)),
         ),
         _LatestActivity(stream: activity),
       ],

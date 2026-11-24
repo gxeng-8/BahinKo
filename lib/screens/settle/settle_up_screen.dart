@@ -119,7 +119,7 @@ class _SettleUpState extends State<SettleUp> {
           PaymentConfirmationDialog(provider: provider, amountInCents: cents),
     );
     if (paid != true || !mounted) return;
-    final proof = await showDialog<bool>(
+    final reference = await showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (_) => PaymentProofDialog(
@@ -129,8 +129,15 @@ class _SettleUpState extends State<SettleUp> {
         amountInCents: cents,
       ),
     );
-    if (proof != true || !mounted) return;
-    await _payment(ledger, me, to, cents, provider.toLowerCase());
+    if (reference == null || !mounted) return;
+    await _payment(
+      ledger,
+      me,
+      to,
+      cents,
+      provider.toLowerCase(),
+      reference: reference,
+    );
   }
 
   /// Records [from] → [to]. Guests can't confirm, so payments to them are
@@ -140,8 +147,9 @@ class _SettleUpState extends State<SettleUp> {
     Person from,
     Person to,
     int cents,
-    String method,
-  ) {
+    String method, {
+    String? reference,
+  }) {
     final toGuest = ledger.group.isGuest(to);
     final toMe = to.id == _myId;
     return _record(
@@ -152,6 +160,7 @@ class _SettleUpState extends State<SettleUp> {
         toName: to.name,
         amountCents: cents,
         method: method,
+        reference: reference,
         status: toGuest || toMe ? 'confirmed' : 'pending',
       ),
       toGuest || toMe
@@ -419,7 +428,8 @@ class _LedgerBody extends StatelessWidget {
                   Expanded(
                     child: Text(
                       '${p.fromName} says they paid you '
-                      '${formatMoney(p.amountCents)} (${p.method})',
+                      '${formatMoney(p.amountCents)} (${p.method}'
+                      '${p.reference == null ? '' : ' · Ref ${p.reference}'})',
                     ),
                   ),
                   const SizedBox(width: 8),

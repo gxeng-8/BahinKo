@@ -1,10 +1,26 @@
-/// Dialog for attaching proof of payment.
+/// Figma Frame 14 "Payment proof": after paying in GCash / Maya, type the
+/// reference number from the app's receipt.
+///
+/// The reference is SAVED with the payment, so the receiver can match it
+/// against their own GCash / Maya history before tapping Confirm.
+/// Validated: 6–20 letters or digits (GCash uses 13 digits, Maya 12).
+///
+/// Returns the reference (spaces removed), or null if cancelled.
 library;
 
 import 'package:flutter/material.dart';
-import 'package:bahinko/utils/currency.dart';
+
 import 'package:bahinko/models/person.dart';
 import 'package:bahinko/theme/app_colors.dart';
+import 'package:bahinko/theme/app_theme.dart';
+import 'package:bahinko/utils/currency.dart';
+
+/// "1234 567 890 123" → "1234567890123"; null if it doesn't look like a
+/// reference number.
+String? normalizeReference(String input) {
+  final ref = input.replaceAll(RegExp(r'[\s-]'), '').toUpperCase();
+  return RegExp(r'^[A-Z0-9]{6,20}$').hasMatch(ref) ? ref : null;
+}
 
 class PaymentProofDialog extends StatefulWidget {
   const PaymentProofDialog({
@@ -15,7 +31,10 @@ class PaymentProofDialog extends StatefulWidget {
     required this.amountInCents,
   });
 
+  /// Who paid (you).
   final Person member;
+
+  /// Who received it.
   final Person payer;
   final String provider;
   final int amountInCents;
@@ -25,24 +44,19 @@ class PaymentProofDialog extends StatefulWidget {
 }
 
 class _PaymentProofDialogState extends State<PaymentProofDialog> {
-  late final TextEditingController _amountController;
-  final TextEditingController _referenceController = TextEditingController();
-  bool _proofAttached = false;
+  final _formKey = GlobalKey<FormState>();
+  final _reference = TextEditingController();
   bool _confirmedCorrect = false;
 
   @override
-  void initState() {
-    super.initState();
-    _amountController = TextEditingController(
-      text: (formatCurrency(widget.amountInCents)).replaceFirst('₱', ''),
-    );
+  void dispose() {
+    _reference.dispose();
+    super.dispose();
   }
 
-  @override
-  void dispose() {
-    _amountController.dispose();
-    _referenceController.dispose();
-    super.dispose();
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+    Navigator.pop(context, normalizeReference(_reference.text));
   }
 
   @override
@@ -50,98 +64,93 @@ class _PaymentProofDialogState extends State<PaymentProofDialog> {
     insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
     child: SingleChildScrollView(
       padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Add payment proof',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            key: const ValueKey('payment-proof-amount'),
-            controller: _amountController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Amount paid',
-              prefixText: '₱ ',
-              border: OutlineInputBorder(),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Add payment proof',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
             ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Pay with ${widget.provider} (${widget.provider == 'GCash' ? '0998 000 7888' : '0921 456 7890'})',
-            style: const TextStyle(fontSize: 12, color: Colors.black54),
-          ),
-          const SizedBox(height: 12),
-          InkWell(
-            key: const ValueKey('payment-proof-upload'),
-            onTap: () => setState(() => _proofAttached = true),
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
+            const SizedBox(height: 12),
+            Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 18),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFFF3FBF8),
+                color: mint,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _proofAttached ? green : const Color(0xFF9DD6C6),
-                  style: BorderStyle.solid,
-                ),
               ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    _proofAttached ? Icons.check_circle : Icons.image_outlined,
-                    color: green,
-                  ),
-                  const SizedBox(height: 6),
                   Text(
-                    _proofAttached
-                        ? 'Payment screenshot attached'
-                        : 'Attach payment proof',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    'You paid ${widget.payer.name} via ${widget.provider}',
+                    style: AppText.caption,
+                  ),
+                  Text(
+                    formatMoney(widget.amountInCents),
+                    style: AppText.money(24, color: deep),
                   ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            key: const ValueKey('payment-proof-reference'),
-            controller: _referenceController,
-            decoration: const InputDecoration(
-              labelText: 'Reference no.',
-              hintText: 'Optional',
-              border: OutlineInputBorder(),
+            const SizedBox(height: 14),
+            TextFormField(
+              key: const ValueKey('payment-proof-reference'),
+              controller: _reference,
+              autofocus: true,
+              textCapitalization: TextCapitalization.characters,
+              decoration: InputDecoration(
+                labelText: 'Reference no.',
+                hintText: widget.provider == 'GCash'
+                    ? '13 digits, e.g. 1009 876 543 210'
+                    : 'From your ${widget.provider} receipt',
+                helperText:
+                    'Found on the ${widget.provider} receipt. '
+                    '${widget.payer.name} uses it to check the payment.',
+                helperMaxLines: 2,
+              ),
+              validator: (v) {
+                if ((v ?? '').trim().isEmpty) {
+                  return 'Enter the reference number';
+                }
+                return normalizeReference(v!) == null
+                    ? 'Use 6–20 letters or numbers'
+                    : null;
+              },
             ),
-          ),
-          const SizedBox(height: 12),
-          CheckboxListTile(
-            key: const ValueKey('payment-proof-confirm'),
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            value: _confirmedCorrect,
-            onChanged: (value) =>
-                setState(() => _confirmedCorrect = value ?? false),
-            title: const Text(
-              'I confirm that your payment is correct',
-              style: TextStyle(fontSize: 12),
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              key: const ValueKey('payment-proof-confirm'),
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _confirmedCorrect,
+              onChanged: (value) =>
+                  setState(() => _confirmedCorrect = value ?? false),
+              title: const Text(
+                'I sent this amount to the right person',
+                style: TextStyle(fontSize: 12),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              key: const ValueKey('submit-payment-proof'),
-              onPressed: _proofAttached && _confirmedCorrect
-                  ? () => Navigator.pop(context, true)
-                  : null,
-              child: const Text('Submit'),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                const Spacer(),
+                FilledButton(
+                  key: const ValueKey('submit-payment-proof'),
+                  onPressed: _confirmedCorrect ? _submit : null,
+                  child: const Text('Submit'),
+                ),
+              ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );

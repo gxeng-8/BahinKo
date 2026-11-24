@@ -53,6 +53,19 @@ service cloud.firestore {
         && after.members.size() <= 50;
     }
 
+    // Leaving (Privacy → Delete my data). The ONLY allowed change is:
+    //   * my uid removed from memberIds,
+    //   * exactly one member card removed from members.
+    function isLeaving() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return signedIn()
+        && request.auth.uid in before.memberIds
+        && after.diff(before).affectedKeys().hasOnly(['memberIds', 'members'])
+        && after.memberIds == before.memberIds.removeAll([request.auth.uid])
+        && after.members.size() == before.members.size() - 1;
+    }
+
     match /groups/{groupId} {
       // Read: members only. (The app's "my groups" query filters by
       // memberIds array-contains my uid, which these rules require.)
@@ -64,7 +77,7 @@ service cloud.firestore {
         && request.resource.data.memberIds == [request.auth.uid]
         && validGroup(request.resource.data);
 
-      allow update: if isMemberEdit() || isJoining();
+      allow update: if isMemberEdit() || isJoining() || isLeaving();
 
       // Delete: only the person who created the group.
       allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;

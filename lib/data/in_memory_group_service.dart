@@ -512,6 +512,18 @@ class InMemoryGroupService extends GroupService {
   }
 
   @override
+  Future<void> deleteRecurring(String groupId, String billId) async {
+    _recurring[groupId]?.removeWhere((b) => b.id == billId);
+    _notifyAll();
+  }
+
+  @override
+  Future<void> leaveAllGroups() async {
+    _groups.clear();
+    _notifyAll();
+  }
+
+  @override
   Future<void> setUnpaidCount(String groupId, int count) async {
     final i = _groups.indexWhere((g) => g.id == groupId);
     if (i == -1) return;

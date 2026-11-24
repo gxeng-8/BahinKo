@@ -48,6 +48,7 @@ class AddExpense extends StatefulWidget {
     this.items,
     this.source = 'manual',
     this.editing,
+    this.initialAmountCents,
   }) : assert(editing == null || groupId != null, 'Editing needs groupId');
 
   /// The group to save into. If null, the user chooses one.
@@ -63,6 +64,9 @@ class AddExpense extends StatefulWidget {
 
   /// The saved expense to change (edit mode), or null to add a new one.
   final GroupExpense? editing;
+
+  /// Pre-filled amount (e.g. from a recurring bill).
+  final int? initialAmountCents;
 
   @override
   State<AddExpense> createState() => _AddExpenseState();
@@ -112,6 +116,10 @@ class _AddExpenseState extends State<AddExpense> {
       _items = widget.items?.toList() ?? [];
       _mode = _items.isEmpty ? SplitMode.equal : SplitMode.byItem;
       if (_items.isNotEmpty) _amount.text = _plain(_itemsTotal);
+      final start = widget.initialAmountCents;
+      if (_items.isEmpty && start != null && start > 0) {
+        _amount.text = _plain(start);
+      }
     }
   }
 

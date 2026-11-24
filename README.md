@@ -23,7 +23,11 @@ BahinKo is a Flutter app for groups (barkadas, dormmates, boarding houses) who s
 | Profile & settings: app lock, wallets, reminders, offline mode, log out (Frame 24) | ✅ |
 | Edit / delete an expense (logged in activity) | ✅ |
 | Settle up from real balances: smart settle (fewest transfers), GCash/Maya/cash, receiver confirms, reminders; live Home balances | ✅ |
-| Recurring bills, activity history, personal ledger, statistics | 🚧 M5 |
+| Statistics, Personal Ledger, Activity History (search + filters), all live | ✅ |
+| Recurring bills: add / pause / delete, tap to add this month's expense | ✅ |
+| Payment reference numbers saved and shown to the receiver | ✅ |
+| Privacy: accurate promises + Delete my data (leave groups, erase account) | ✅ |
+| App name "BahinKo" and launcher icon (Android, iOS, web, Windows) | ✅ |
 
 ---
 

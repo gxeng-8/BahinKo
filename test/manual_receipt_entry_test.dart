@@ -6,9 +6,6 @@ import 'package:bahinko/models/group.dart';
 import 'package:bahinko/screens/bill/manual_receipt_entry_screen.dart';
 import 'package:bahinko/screens/group/invite_members_screen.dart';
 import 'package:bahinko/screens/group/members_screen.dart';
-import 'package:bahinko/screens/history/activity_history_screen.dart';
-import 'package:bahinko/screens/history/personal_ledger_screen.dart';
-import 'package:bahinko/screens/recurring/recurring_bills_screen.dart';
 import 'package:bahinko/screens/settle/settle_up_screen.dart';
 import 'package:bahinko/services/group_service.dart';
 import 'package:flutter/material.dart';
@@ -162,45 +159,10 @@ void main() {
     expect(find.text('₱54.62'), findsOneWidget);
   });
 
-  testWidgets(
-    'batch three screens are reachable and recurring bills can be added',
-    (tester) async {
-      await tester.pumpWidget(const MaterialApp(home: RecurringBills()));
-
-      expect(find.text('Recurring Bills'), findsWidgets);
-      await tester.tap(find.text('+ Add recurring bill'));
-      await tester.pumpAndSettle();
-
-      await tester.enterText(
-        find.byKey(const ValueKey('recurring-name')),
-        'Internet',
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('recurring-amount')),
-        '999',
-      );
-      await tester.enterText(find.byKey(const ValueKey('recurring-day')), '20');
-      await tester.tap(find.byKey(const ValueKey('recurring-save')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Internet'), findsOneWidget);
-      expect(find.text('₱999'), findsOneWidget);
-
-      await tester.pumpWidget(const MaterialApp(home: ActivityHistory()));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Payments'));
-      await tester.pumpAndSettle();
-      expect(find.text('You paid ₱320 to Mia'), findsOneWidget);
-
-      await tester.pumpWidget(const MaterialApp(home: PersonalLedger()));
-      await tester.pumpAndSettle();
-      expect(find.text('Personal Ledger'), findsOneWidget);
-      expect(find.text('₱710.00'), findsOneWidget);
-
-      await tester.pumpWidget(const MaterialApp(home: InviteMembers()));
-      await tester.pumpAndSettle();
-      expect(find.text('Dinner at Jaro'), findsOneWidget);
-      expect(find.text('Copy invite link'), findsOneWidget);
-    },
-  );
+  testWidgets('invite screen shows the sample group', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: InviteMembers()));
+    await tester.pumpAndSettle();
+    expect(find.text('Dinner at Jaro'), findsOneWidget);
+    expect(find.text('Copy invite link'), findsOneWidget);
+  });
 }

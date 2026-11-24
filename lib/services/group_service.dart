@@ -110,6 +110,14 @@ abstract class GroupService {
   Stream<List<RecurringBill>> watchRecurring(String groupId);
   Future<void> addRecurring(String groupId, RecurringBill bill);
   Future<void> setRecurringEnabled(String groupId, String billId, bool enabled);
+  Future<void> deleteRecurring(String groupId, String billId);
+
+  // ---------- Delete my data (Privacy) ----------
+
+  /// Removes me from every group: my name and account leave the member
+  /// list. Groups where I was the last app user and the creator are
+  /// deleted. Past expenses/payments stay so the others' balances add up.
+  Future<void> leaveAllGroups();
 
   // ---------- Offline mode (Profile, Frame 24) ----------
 
@@ -132,54 +140,103 @@ abstract class GroupService {
     GroupLedger.new,
   );
 
-  /// Across ALL my groups: how much others owe me, and how much I owe
-  /// (the Home header). Updates live as any group changes.
-  Stream<({int owedToYou, int youOwe})> watchMyTotals() {
-    late final StreamController<({int owedToYou, int youOwe})> out;
+  /// Live data from EVERY group I'm in: [per] is called once for each
+  /// group (e.g. its ledger or activity), and the results are emitted as one
+  /// list, in the same order as [watchMyGroups]. Groups that join or leave
+  /// are picked up automatically. Used by Home, Statistics, Personal Ledger
+  /// and Activity History, so they always agree with each other.
+  ///
+  /// Waits until every group has sent its first value (so screens don't
+  /// flash half-loaded numbers). A group that fails is skipped, not fatal.
+  Stream<List<T>> watchAcrossMyGroups<T>(Stream<T> Function(Group g) per) {
+    late final StreamController<List<T>> out;
     StreamSubscription<List<Group>>? groupsSub;
-    final ledgerSubs = <String, StreamSubscription<GroupLedger>>{};
-    final ledgers = <String, GroupLedger>{};
+    final subs = <String, StreamSubscription<T>>{};
+    final latest = <String, T>{};
+    final waiting = <String>{}; // groups that haven't sent anything yet
+    var order = <String>[];
 
     void emit() {
-      var owed = 0, owe = 0;
-      for (final ledger in ledgers.values) {
-        final mine = ledger.balances[myId] ?? 0;
-        if (mine > 0) owed += mine;
-        if (mine < 0) owe -= mine;
-      }
-      out.add((owedToYou: owed, youOwe: owe));
+      if (waiting.isNotEmpty) return;
+      out.add([
+        for (final id in order)
+          if (latest.containsKey(id)) latest[id] as T,
+      ]);
     }
 
     out = StreamController(
       onListen: () {
         groupsSub = watchMyGroups().listen((groups) {
-          final ids = {for (final g in groups) g.id};
-          // Stop listening to groups I left; start on new ones.
-          for (final id in ledgerSubs.keys.toList()) {
+          order = [for (final g in groups) g.id];
+          final ids = order.toSet();
+          // Stop listening to groups I left.
+          for (final id in subs.keys.toList()) {
             if (!ids.contains(id)) {
-              ledgerSubs.remove(id)!.cancel();
-              ledgers.remove(id);
+              subs.remove(id)!.cancel();
+              latest.remove(id);
+              waiting.remove(id);
             }
           }
-          for (final id in ids) {
-            ledgerSubs.putIfAbsent(
-              id,
-              () => watchLedger(id).listen((ledger) {
-                ledgers[id] = ledger;
+          // Start on new ones.
+          for (final g in groups) {
+            if (subs.containsKey(g.id)) continue;
+            waiting.add(g.id);
+            subs[g.id] = per(g).listen(
+              (value) {
+                latest[g.id] = value;
+                waiting.remove(g.id);
                 emit();
-              }, onError: (_) {}), // one broken group shouldn't hide the rest
+              },
+              onError: (_) {
+                // One broken group shouldn't hide the others.
+                waiting.remove(g.id);
+                emit();
+              },
             );
           }
-          if (ids.isEmpty) emit();
+          emit(); // e.g. no groups at all, or a group was removed
         }, onError: out.addError);
       },
       onCancel: () async {
         await groupsSub?.cancel();
-        await Future.wait(ledgerSubs.values.map((s) => s.cancel()));
+        await Future.wait(subs.values.map((s) => s.cancel()));
       },
     );
     return out.stream;
   }
+
+  /// Every group's ledger, live (Statistics, Personal Ledger).
+  Stream<List<GroupLedger>> watchAllLedgers() =>
+      watchAcrossMyGroups((g) => watchLedger(g.id));
+
+  /// Across ALL my groups: how much others owe me, and how much I owe
+  /// (the Home header). Updates live as any group changes.
+  Stream<({int owedToYou, int youOwe})> watchMyTotals() =>
+      watchAllLedgers().map((ledgers) {
+        var owed = 0, owe = 0;
+        for (final ledger in ledgers) {
+          final mine = ledger.balances[myId] ?? 0;
+          if (mine > 0) owed += mine;
+          if (mine < 0) owe -= mine;
+        }
+        return (owedToYou: owed, youOwe: owe);
+      });
+
+  /// Activity from all my groups, newest first, each with its group
+  /// (Activity History).
+  Stream<List<({Group group, ActivityEvent event})>> watchAllActivity() =>
+      watchAcrossMyGroups(
+        (g) => watchActivity(g.id)
+            .map((events) => [for (final e in events) (group: g, event: e)]),
+      ).map((perGroup) {
+        final all = [for (final list in perGroup) ...list];
+        all.sort(
+          (a, b) => (b.event.createdAt ?? DateTime.now()).compareTo(
+            a.event.createdAt ?? DateTime.now(),
+          ),
+        );
+        return all;
+      });
 }
 
 /// Checks an expense before saving. Throws [GroupFailure] with a message

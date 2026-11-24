@@ -517,6 +517,47 @@ class FirestoreGroupService extends GroupService {
   }
 
   @override
+  Future<void> deleteRecurring(String groupId, String billId) async {
+    try {
+      await _waitForServer(_sub(groupId, 'recurring').doc(billId).delete());
+    } on FirebaseException catch (e) {
+      throw _toFailure(e);
+    }
+  }
+
+  // ---------- Delete my data ----------
+
+  @override
+  Future<void> leaveAllGroups() async {
+    final me = _uid;
+    final snap = await _groups.where('memberIds', arrayContains: me).get();
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      final memberIds = List<String>.from(data['memberIds'] as List? ?? []);
+      try {
+        if (memberIds.length == 1 && data['createdBy'] == me) {
+          // Nobody else with the app: delete the group itself.
+          await _waitForServer(doc.reference.delete());
+        } else {
+          // Leave: take my uid and my member card out (rule: isLeaving).
+          final members = [
+            for (final m in data['members'] as List? ?? const [])
+              if ((m as Map)['id'] != me) m,
+          ];
+          await _waitForServer(
+            doc.reference.update({
+              'memberIds': FieldValue.arrayRemove([me]),
+              'members': members,
+            }),
+          );
+        }
+      } on FirebaseException catch (e) {
+        throw _toFailure(e);
+      }
+    }
+  }
+
+  @override
   Future<void> setUnpaidCount(String groupId, int count) async {
     try {
       await _waitForServer(_groups.doc(groupId).update({'unpaidCount': count}));
